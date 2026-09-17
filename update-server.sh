@@ -25,7 +25,7 @@ if [ "$LOCAL" != "$REMOTE" ]; then
 
     tmux kill-session -t bot 2>/dev/null
 
-    ~/personal-server/start-bot.sh
+    echo "$(date) - Bot stopped. Network watcher will restart it when Telegram is reachable."
 
     echo "$(date) - Update complete."
 
