@@ -2,24 +2,33 @@
 
 cd ~/personal-server || exit 1
 
+echo "$(date) - Checking GitHub..."
+
 git fetch origin main
 
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse origin/main)
 
 if [ "$LOCAL" != "$REMOTE" ]; then
-    echo "New code detected. Updating..."
+
+    echo "$(date) - New code detected. Updating..."
 
     git pull --ff-only origin main
 
-    echo "Restarting bot..."
+    echo "$(date) - Installing boot script..."
+
+    mkdir -p ~/.termux/boot
+    cp ~/personal-server/start-bot.sh ~/.termux/boot/start-bot
+    chmod +x ~/.termux/boot/start-bot
+
+    echo "$(date) - Restarting bot..."
 
     tmux kill-session -t bot 2>/dev/null
 
-    tmux new-session -d -s bot \
-        "cd ~/personal-server && source venv/bin/activate && python bot.py"
+    ~/personal-server/start-bot.sh
 
-    echo "Update complete."
+    echo "$(date) - Update complete."
+
 else
-    echo "No update."
+    echo "$(date) - No update."
 fi
