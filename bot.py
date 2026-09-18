@@ -105,7 +105,7 @@ def date_error():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = (
-        "🤖 Personal Server of Kush Modi\n\n"
+        "🤖 Personal Server\n\n"
 
         "🍽 FOOD\n"
         "/food NAME CALORIES\n"
