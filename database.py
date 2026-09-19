@@ -1,51 +1,24 @@
-import sqlite3
+"""
+Database compatibility bridge.
+Redirects legacy callers to the new modular database package and migrations.
+"""
+
 from pathlib import Path
+from app.database.connection import get_connection as _get_connection
+from app.database.migrations import run_migrations
 
 DB_PATH = Path(__file__).parent / "personal.db"
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    """Backward-compatible connection getter."""
+    return _get_connection(DB_PATH)
 
 
 def init_db():
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    # Weight records
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS weights (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            weight REAL NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Expense records
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            amount REAL NOT NULL,
-            category TEXT NOT NULL,
-            description TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Food and calorie records
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS food (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            food_name TEXT NOT NULL,
-            calories REAL NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    conn.commit()
-    conn.close()
-
-    print("Database initialized successfully!")
+    """Backward-compatible database initializer executing safe migrations."""
+    applied = run_migrations(DB_PATH)
+    print(f"Database initialized/migrated successfully! ({applied} migrations applied)")
 
 
 if __name__ == "__main__":

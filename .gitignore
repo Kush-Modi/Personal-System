@@ -1,5 +1,24 @@
+# Secrets and Local Environment
 .env
+*.env
+
+# SQLite Database
 personal.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Python Runtime
 venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Application Logs & Temporary Data
+logs/
+data/images/
+data/cache/
+*.log

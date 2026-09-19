@@ -29,7 +29,7 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     echo "$(date) - New code detected ($LOCAL -> $REMOTE). Updating..."
 
     if ! git pull --ff-only origin main; then
-        echo "$(date) - ERROR: 'git pull --ff-only' failed. Working tree may have local changes. Deployment aborted. Bot will NOT be stopped."
+        echo "$(date) - ERROR: 'git pull --ff-only' failed. Deployment aborted. Bot will NOT be stopped."
         exit 1
     fi
 
