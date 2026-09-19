@@ -15,6 +15,7 @@ from app.telegram.handlers.callbacks import handle_callback_query
 from app.telegram.handlers.commands import (
     food_command,
     monthly_command,
+    pending_command,
     start_command,
     status_command,
     summary_command,
@@ -47,6 +48,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", start_command))
     app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("pending", pending_command))
     app.add_handler(CommandHandler("food", food_command))
     app.add_handler(CommandHandler("weight", weight_command))
     app.add_handler(CommandHandler("summary", summary_command))

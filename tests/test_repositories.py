@@ -2,10 +2,11 @@
 
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.database.migrations import run_migrations
+from app.database.repositories.edit_session import EditSessionRepository
 from app.database.repositories.expense import ExpenseRepository
 from app.database.repositories.food import FoodRepository
 from app.database.repositories.pending_items import PendingItemRepository
@@ -24,6 +25,7 @@ class TestRepositories(unittest.TestCase):
         self.weight_repo = WeightRepository(self.db_path)
         self.expense_repo = ExpenseRepository(self.db_path)
         self.pending_repo = PendingItemRepository(self.db_path)
+        self.session_repo = EditSessionRepository(self.db_path)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -105,6 +107,8 @@ class TestRepositories(unittest.TestCase):
             item_type="FOOD",
             structured_payload=payload,
             raw_payload="Oatmeal with almonds",
+            source="MOCK",
+            confidence=0.95,
             user_notes="Breakfast"
         )
         self.assertGreater(item_id, 0)
@@ -113,16 +117,46 @@ class TestRepositories(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertEqual(item.item_type, "FOOD")
         self.assertEqual(item.status, "PENDING")
+        self.assertEqual(item.source, "MOCK")
+        self.assertEqual(item.confidence, 0.95)
         self.assertEqual(item.structured_payload, payload)
 
         pending_list = self.pending_repo.list_by_status("PENDING")
         self.assertEqual(len(pending_list), 1)
+
+        # Update payload
+        self.pending_repo.update_payload(item_id, {"food_name": "Oatmeal with Honey", "calories": 350.0})
+        updated = self.pending_repo.get_by_id(item_id)
+        self.assertEqual(updated.structured_payload["food_name"], "Oatmeal with Honey")
+        self.assertEqual(updated.structured_payload["calories"], 350.0)
 
         # Update status
         self.pending_repo.update_status(item_id, "CONFIRMED")
         item_updated = self.pending_repo.get_by_id(item_id)
         self.assertEqual(item_updated.status, "CONFIRMED")
         self.assertIsNotNone(item_updated.resolved_at)
+
+    def test_edit_session_repository(self):
+        # Create a pending item first to satisfy foreign key constraint
+        pending_id = self.pending_repo.create(
+            item_type="FOOD",
+            structured_payload={"food_name": "Wrap", "calories": 350}
+        )
+
+        user_id = 12345
+        expires = (datetime.now() + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Upsert
+        self.session_repo.upsert_session(user_id, pending_id, "FOOD", expires)
+        session = self.session_repo.get_session(user_id)
+        self.assertIsNotNone(session)
+        self.assertEqual(session.user_id, user_id)
+        self.assertEqual(session.pending_item_id, pending_id)
+        self.assertEqual(session.item_type, "FOOD")
+
+        # Delete
+        self.session_repo.delete_session(user_id)
+        self.assertIsNone(self.session_repo.get_session(user_id))
 
 
 if __name__ == "__main__":

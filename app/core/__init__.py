@@ -1,17 +1,23 @@
 """Core application module."""
 
-from app.core.config import settings, Settings
-from app.core.logging import get_logger, setup_logging
+from app.core.config import Settings, settings
 from app.core.exceptions import (
+    AIServiceError,
+    AlreadyProcessedError,
     AppError,
     ConfigError,
-    ValidationError,
-    NotFoundError,
     DatabaseError,
+    DomainValidationError,
+    InvalidStateTransitionError,
+    MediaProcessingError,
     MigrationError,
-    AIServiceError,
+    NotFoundError,
+    SchemaValidationError,
+    SessionExpiredError,
+    ValidationError,
 )
-from app.core.health import get_system_health, SystemHealthReport
+from app.core.health import SystemHealthReport, get_system_health
+from app.core.logging import get_logger, setup_logging
 
 __all__ = [
     "settings",
@@ -21,9 +27,15 @@ __all__ = [
     "AppError",
     "ConfigError",
     "ValidationError",
+    "SchemaValidationError",
+    "DomainValidationError",
     "NotFoundError",
     "DatabaseError",
     "MigrationError",
+    "InvalidStateTransitionError",
+    "AlreadyProcessedError",
+    "SessionExpiredError",
+    "MediaProcessingError",
     "AIServiceError",
     "get_system_health",
     "SystemHealthReport",

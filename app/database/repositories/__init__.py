@@ -1,10 +1,11 @@
 """Database repositories."""
 
 from app.database.repositories.base import BaseRepository
-from app.database.repositories.food import FoodRepository, FoodRecord
-from app.database.repositories.weight import WeightRepository, WeightRecord
-from app.database.repositories.expense import ExpenseRepository, ExpenseRecord
-from app.database.repositories.pending_items import PendingItemRepository, PendingItem
+from app.database.repositories.edit_session import EditSessionRepository
+from app.database.repositories.expense import ExpenseRecord, ExpenseRepository
+from app.database.repositories.food import FoodRecord, FoodRepository
+from app.database.repositories.pending_items import PendingItemRepository
+from app.database.repositories.weight import WeightRecord, WeightRepository
 
 __all__ = [
     "BaseRepository",
@@ -15,5 +16,5 @@ __all__ = [
     "ExpenseRepository",
     "ExpenseRecord",
     "PendingItemRepository",
-    "PendingItem",
+    "EditSessionRepository",
 ]

@@ -2,6 +2,8 @@
 
 from app.services.finance.service import FinanceService
 from app.services.food.service import FoodService
+from app.services.pending.service import PendingItemService
+from app.services.review.service import PendingReviewService
 from app.services.system.service import SystemService
 from app.services.weight.service import WeightService
 
@@ -10,4 +12,6 @@ __all__ = [
     "WeightService",
     "FinanceService",
     "SystemService",
+    "PendingItemService",
+    "PendingReviewService",
 ]

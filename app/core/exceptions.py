@@ -12,7 +12,17 @@ class ConfigError(AppError):
 
 
 class ValidationError(AppError):
-    """Raised when input validation fails."""
+    """Raised when input validation fails (schema or domain)."""
+    pass
+
+
+class SchemaValidationError(ValidationError):
+    """Raised when input structure or types violate expected schema."""
+    pass
+
+
+class DomainValidationError(ValidationError):
+    """Raised when business logic rules are violated."""
     pass
 
 
@@ -28,6 +38,26 @@ class DatabaseError(AppError):
 
 class MigrationError(DatabaseError):
     """Raised when database migration encounters an issue."""
+    pass
+
+
+class InvalidStateTransitionError(AppError):
+    """Raised when an illegal lifecycle state transition is attempted."""
+    pass
+
+
+class AlreadyProcessedError(AppError):
+    """Raised when an item has already been confirmed, rejected, or expired."""
+    pass
+
+
+class SessionExpiredError(AppError):
+    """Raised when an interactive session (e.g. edit) has expired."""
+    pass
+
+
+class MediaProcessingError(AppError):
+    """Raised when an image or media processing step fails."""
     pass
 
 

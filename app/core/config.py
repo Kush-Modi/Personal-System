@@ -48,7 +48,7 @@ class Settings:
         default_factory=lambda: Path(os.getenv("LOG_FILE", str(BASE_DIR / "logs" / "personal_system.log"))).resolve()
     )
 
-    # Storage
+    # Storage & Media
     data_dir: Path = field(
         default_factory=lambda: Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))).resolve()
     )
@@ -58,13 +58,33 @@ class Settings:
     image_retention_days: int = field(
         default_factory=lambda: int(os.getenv("IMAGE_RETENTION_DAYS", "30"))
     )
+    image_max_dimension: int = field(
+        default_factory=lambda: int(os.getenv("IMAGE_MAX_DIMENSION", "1600"))
+    )
+    image_quality: int = field(
+        default_factory=lambda: int(os.getenv("IMAGE_QUALITY", "80"))
+    )
 
-    # AI Configuration
+    # Workflow & Pending Items
+    pending_item_ttl_hours: int = field(
+        default_factory=lambda: int(os.getenv("PENDING_ITEM_TTL_HOURS", "48"))
+    )
+    edit_session_ttl_minutes: int = field(
+        default_factory=lambda: int(os.getenv("EDIT_SESSION_TTL_MINUTES", "10"))
+    )
+    pending_review_time: str = field(
+        default_factory=lambda: os.getenv("PENDING_REVIEW_TIME", "21:00")
+    )
+
+    # AI Configuration (Phase 1/2 Foundation - no live calls in Phase 2)
     gemini_api_key: Optional[str] = field(
         default_factory=lambda: os.getenv("GEMINI_API_KEY")
     )
     daily_ai_request_limit: int = field(
         default_factory=lambda: int(os.getenv("DAILY_AI_REQUEST_LIMIT", "50"))
+    )
+    daily_ai_token_limit: int = field(
+        default_factory=lambda: int(os.getenv("DAILY_AI_TOKEN_LIMIT", "100000"))
     )
 
     def ensure_directories(self) -> None:
@@ -94,8 +114,14 @@ class Settings:
             "data_dir": str(self.data_dir),
             "image_dir": str(self.image_dir),
             "image_retention_days": self.image_retention_days,
+            "image_max_dimension": self.image_max_dimension,
+            "image_quality": self.image_quality,
+            "pending_item_ttl_hours": self.pending_item_ttl_hours,
+            "edit_session_ttl_minutes": self.edit_session_ttl_minutes,
+            "pending_review_time": self.pending_review_time,
             "gemini_api_key": masked_gemini,
             "daily_ai_request_limit": self.daily_ai_request_limit,
+            "daily_ai_token_limit": self.daily_ai_token_limit,
         }
 
 

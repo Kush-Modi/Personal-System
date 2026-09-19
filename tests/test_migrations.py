@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.database.migrations import run_migrations, get_applied_versions
+from app.database.migrations import get_applied_versions, run_migrations
 
 
 class TestDatabaseMigrations(unittest.TestCase):
@@ -19,21 +19,32 @@ class TestDatabaseMigrations(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_migrations_on_fresh_db(self):
-        """Verify migrations create all baseline and Phase 1 tables on empty DB."""
+        """Verify migrations create all baseline, Phase 1, and Phase 2 tables on empty DB."""
         applied = run_migrations(self.db_path)
-        self.assertGreaterEqual(applied, 2)
+        self.assertGreaterEqual(applied, 3)
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = {row[0] for row in cursor.fetchall()}
-        conn.close()
 
         self.assertIn("schema_version", tables)
         self.assertIn("weights", tables)
         self.assertIn("food", tables)
         self.assertIn("expenses", tables)
         self.assertIn("pending_items", tables)
+        self.assertIn("edit_sessions", tables)
+
+        # Check pending_items columns from migration 003
+        cursor.execute("PRAGMA table_info(pending_items);")
+        cols = {row[1] for row in cursor.fetchall()}
+        self.assertIn("source", cols)
+        self.assertIn("confidence", cols)
+        self.assertIn("updated_at", cols)
+        self.assertIn("expires_at", cols)
+        self.assertIn("error_info", cols)
+
+        conn.close()
 
     def test_migrations_idempotency(self):
         """Running migrations a second time should apply 0 new migrations."""
@@ -105,10 +116,11 @@ class TestDatabaseMigrations(unittest.TestCase):
         self.assertAlmostEqual(expense_row[0], 150)
         self.assertEqual(expense_row[1], "Groceries")
 
-        # Verify pending_items and schema_version now exist alongside legacy tables
+        # Verify pending_items, edit_sessions, and schema_version now exist alongside legacy tables
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = {row[0] for row in cursor.fetchall()}
         self.assertIn("pending_items", tables)
+        self.assertIn("edit_sessions", tables)
         self.assertIn("schema_version", tables)
         conn.close()
 

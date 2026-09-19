@@ -9,15 +9,21 @@ from telegram.ext import ContextTypes
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.services.food.service import FoodService
+from app.services.pending.service import PendingItemService
+from app.services.review.service import PendingReviewService
 from app.services.system.service import SystemService
 from app.services.weight.service import WeightService
+from app.telegram.keyboards import build_pending_action_keyboard
 from app.telegram.parsing import date_error, format_date, parse_date, today_date
+from app.telegram.renderers import render_pending_preview
 
 logger = get_logger("telegram.commands")
 
 food_service = FoodService()
 weight_service = WeightService()
 system_service = SystemService()
+pending_service = PendingItemService()
+review_service = PendingReviewService()
 
 
 # ==================================================
@@ -53,6 +59,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "/weekly 2026-09-01\n\n"
         "/monthly\n"
         "/monthly 2026-09\n\n"
+        "🔎 REVIEW & ACTIONS\n"
+        "/pending\n\n"
         "🖥 SYSTEM\n"
         "/status"
     )
@@ -66,6 +74,31 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     status_msg = system_service.get_formatted_status_message()
     await update.message.reply_text(status_msg, parse_mode="Markdown")
+
+
+async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /pending command: list all items awaiting user confirmation."""
+    if not update.message:
+        return
+
+    pending_items = pending_service.list_pending()
+    if not pending_items:
+        await update.message.reply_text("✨ No items waiting for confirmation!")
+        return
+
+    await update.message.reply_text(
+        f"📋 *Pending Items:* ({len(pending_items)} awaiting action)",
+        parse_mode="Markdown"
+    )
+
+    for item in pending_items:
+        preview = render_pending_preview(item)
+        keyboard = build_pending_action_keyboard(item.id)
+        await update.message.reply_text(
+            preview,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
 
 
 async def food_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

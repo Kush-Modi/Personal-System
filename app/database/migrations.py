@@ -81,10 +81,46 @@ def _migration_002_performance_indexes_and_pending_items(conn: sqlite3.Connectio
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_pending_items_status ON pending_items (status);")
 
 
+def _migration_003_phase2_pending_and_edit_sessions(conn: sqlite3.Connection) -> None:
+    """Enhance pending_items schema and add edit_sessions table for Phase 2 workflow."""
+    cursor = conn.cursor()
+
+    # Inspect columns of pending_items
+    cursor.execute("PRAGMA table_info(pending_items);")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+
+    if "source" not in existing_cols:
+        cursor.execute("ALTER TABLE pending_items ADD COLUMN source TEXT DEFAULT 'UNKNOWN';")
+    if "confidence" not in existing_cols:
+        cursor.execute("ALTER TABLE pending_items ADD COLUMN confidence REAL DEFAULT 1.0;")
+    if "updated_at" not in existing_cols:
+        cursor.execute("ALTER TABLE pending_items ADD COLUMN updated_at TEXT;")
+    if "expires_at" not in existing_cols:
+        cursor.execute("ALTER TABLE pending_items ADD COLUMN expires_at TEXT;")
+    if "error_info" not in existing_cols:
+        cursor.execute("ALTER TABLE pending_items ADD COLUMN error_info TEXT;")
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_pending_items_expires_at ON pending_items (expires_at);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_pending_items_created_at ON pending_items (created_at);")
+
+    # Edit sessions table for short-lived interactive edits
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS edit_sessions (
+            user_id INTEGER PRIMARY KEY,
+            pending_item_id INTEGER NOT NULL,
+            item_type TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY (pending_item_id) REFERENCES pending_items (id) ON DELETE CASCADE
+        );
+    """)
+
+
 # Registry of ordered migrations
 MIGRATIONS: List[Migration] = [
     Migration(version=1, name="baseline_tables", up=_migration_001_baseline),
     Migration(version=2, name="performance_indexes_and_pending_items", up=_migration_002_performance_indexes_and_pending_items),
+    Migration(version=3, name="phase2_pending_and_edit_sessions", up=_migration_003_phase2_pending_and_edit_sessions),
 ]
 
 
