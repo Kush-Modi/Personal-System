@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from app.core.exceptions import MediaProcessingError, ValidationError
 from app.core.logging import get_logger
 from app.domain.models import InputSource
-from app.input.mock_processor import MockInputProcessor
+from app.input.ai_processor import AIInputProcessor
 from app.media.storage import MediaStorage
 from app.services.pending.service import PendingItemService
 from app.telegram.keyboards import build_pending_action_keyboard
@@ -15,7 +15,7 @@ from app.telegram.renderers import render_pending_preview
 logger = get_logger("telegram.photos")
 
 media_storage = MediaStorage()
-mock_processor = MockInputProcessor()
+input_processor = AIInputProcessor()
 pending_service = PendingItemService()
 
 
@@ -38,8 +38,8 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Optimize and save locally
         saved_path = media_storage.save_image(bytes(photo_bytes), prefix="inbound", optimize=True)
 
-        # Process photo with mock/deterministic processor (Phase 2 foundation)
-        result = mock_processor.process_photo(image_path=saved_path, caption=caption)
+        # Process photo with AI / Multimodal perception
+        result = input_processor.process_photo(image_path=saved_path, caption=caption)
 
         if result.success:
             pending_item = pending_service.create_pending_item(
@@ -55,18 +55,17 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
             keyboard = build_pending_action_keyboard(pending_item.id)
 
             await update.message.reply_text(
-                f"📷 *Photo Processed*\n\n{preview_text}",
+                f"📷 *Photo Analyzed*\n\n{preview_text}",
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
         else:
-            await update.message.reply_text(
-                "📷 Photo received, but could not identify structured items from it."
-            )
+            err_msg = result.error_message or "Could not identify structured food items from photo."
+            await update.message.reply_text(f"📷 {err_msg}")
 
     except MediaProcessingError as e:
         logger.error(f"Media processing error: {e}", exc_info=True)
         await update.message.reply_text("⚠️ Could not process the received image.")
     except Exception as e:
         logger.error(f"Unexpected error handling photo: {e}", exc_info=True)
-        await update.message.reply_text("⚠️ An error occurred while saving the photo.")
+        await update.message.reply_text("⚠️ An error occurred while processing the photo.")

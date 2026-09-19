@@ -26,6 +26,7 @@ from app.domain.models import (
 from app.domain.validators import validate_payload
 from app.services.finance.service import FinanceService
 from app.services.food.service import FoodService
+from app.services.food_memory.service import FoodMemoryService
 
 logger = get_logger("services.pending")
 
@@ -38,11 +39,13 @@ class PendingItemService:
         pending_repo: Optional[PendingItemRepository] = None,
         food_service: Optional[FoodService] = None,
         finance_service: Optional[FinanceService] = None,
+        food_memory_service: Optional[FoodMemoryService] = None,
         ttl_hours: Optional[int] = None
     ):
         self.repo = pending_repo or PendingItemRepository()
         self.food_service = food_service or FoodService()
         self.finance_service = finance_service or FinanceService()
+        self.food_memory_service = food_memory_service or FoodMemoryService()
         self.ttl_hours = ttl_hours if ttl_hours is not None else settings.pending_item_ttl_hours
 
     def create_pending_item(
@@ -96,7 +99,8 @@ class PendingItemService:
         1. Check state is PENDING.
         2. Validate payload.
         3. Persist to final domain table via domain service.
-        4. Transition state to CONFIRMED.
+        4. Learn food to food memory if applicable.
+        5. Transition state to CONFIRMED.
         Idempotent: double-calls raise AlreadyProcessedError.
         """
         item = self.get_pending_item(item_id)
@@ -123,6 +127,16 @@ class PendingItemService:
                     name=food_payload.food_name,
                     calories=food_payload.calories
                 )
+
+                # Persist to local food memory
+                try:
+                    self.food_memory_service.record_confirmed_food(
+                        food_name=food_payload.food_name,
+                        calories=food_payload.calories,
+                        source="USER_CONFIRMED"
+                    )
+                except Exception as mem_err:
+                    logger.warning(f"Could not update food memory on confirm: {mem_err}")
 
             elif item.item_type == ItemType.EXPENSE.value or isinstance(validated_obj, ExpensePayload):
                 exp_payload = validated_obj if isinstance(validated_obj, ExpensePayload) else ExpensePayload(**item.structured_payload)

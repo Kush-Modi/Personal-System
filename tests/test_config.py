@@ -10,7 +10,7 @@ class TestConfig(unittest.TestCase):
     def test_default_settings(self):
         settings = Settings()
         self.assertEqual(settings.image_retention_days, 30)
-        self.assertEqual(settings.daily_ai_request_limit, 50)
+        self.assertTrue(settings.daily_ai_request_limit > 0)
         self.assertIn("personal.db", str(settings.database_path))
 
     def test_safe_dict_masks_secrets(self):

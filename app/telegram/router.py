@@ -13,6 +13,7 @@ from telegram.ext import (
 from app.core.logging import get_logger
 from app.telegram.handlers.callbacks import handle_callback_query
 from app.telegram.handlers.commands import (
+    aiusage_command,
     food_command,
     monthly_command,
     pending_command,
@@ -54,6 +55,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("summary", summary_command))
     app.add_handler(CommandHandler("weekly", weekly_command))
     app.add_handler(CommandHandler("monthly", monthly_command))
+    app.add_handler(CommandHandler("aiusage", aiusage_command))
 
     # Media / Messages
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))

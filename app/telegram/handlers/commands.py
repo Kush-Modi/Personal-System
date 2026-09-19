@@ -6,6 +6,7 @@ from typing import Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from app.ai.service import AIService
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.services.food.service import FoodService
@@ -24,6 +25,7 @@ weight_service = WeightService()
 system_service = SystemService()
 pending_service = PendingItemService()
 review_service = PendingReviewService()
+ai_service = AIService()
 
 
 # ==================================================
@@ -61,6 +63,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "/monthly 2026-09\n\n"
         "🔎 REVIEW & ACTIONS\n"
         "/pending\n\n"
+        "🧠 AI & TELEMETRY\n"
+        "/aiusage\n\n"
         "🖥 SYSTEM\n"
         "/status"
     )
@@ -430,3 +434,51 @@ async def monthly_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
     await update.message.reply_text(message)
+
+
+async def aiusage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /aiusage command to inspect daily token/request budget and telemetry."""
+    if not update.message:
+        return
+
+    usage = ai_service.get_ai_usage_status()
+    budget = usage["budget"]
+    health = usage["health"]
+
+    status_str = "🔴 Limit Reached" if budget["is_exhausted"] else ("🟡 High" if budget["requests_percent"] > 80 else "🟢 Healthy")
+
+    lines = [
+        "🧠 *AI Usage & Budget Report*",
+        f"📅 *Date:* `{budget['date']}`",
+        f"📊 *Status:* {status_str}",
+        "",
+        "📈 *Daily Guardrails:*",
+        f"• Requests: *{budget['requests_used']}* / {budget['requests_limit']} ({budget['requests_percent']}%)",
+        f"• Tokens: *{budget['tokens_used']:,}* / {budget['tokens_limit']:,} ({budget['tokens_percent']}%)",
+        f"• Avg Latency: *{budget['avg_latency_ms']:.0f}ms*",
+        "",
+        "🔌 *Provider Status:*",
+    ]
+
+    for p_name in ["gemini", "groq", "openrouter"]:
+        p_health = health.get(p_name)
+        is_circuit_open = ai_service.router.health_repo.is_circuit_open(p_name)
+        if is_circuit_open:
+            p_status = "⏸ In Cooldown"
+        elif p_health and p_health.consecutive_failures > 0:
+            p_status = f"⚠️ Degraded ({p_health.consecutive_failures} fails)"
+        else:
+            p = ai_service.router.get_provider(p_name)
+            p_status = "✅ Ready" if (p and p.is_available()) else "⚪ Unconfigured"
+        lines.append(f"• *{p_name.capitalize()}*: {p_status}")
+
+    recent = usage["recent"]
+    if recent:
+        lines.append("\n🕒 *Recent Invocations:*")
+        for r in recent[:4]:
+            stat_icon = "✅" if r.status == "SUCCESS" else "❌"
+            time_part = r.created_at[11:16] if len(r.created_at) >= 16 else r.created_at
+            lines.append(f"• {stat_icon} `{time_part}` | {r.provider} ({r.model}) | {r.total_tokens} toks | {r.latency_ms:.0f}ms")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+

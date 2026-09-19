@@ -116,11 +116,76 @@ def _migration_003_phase2_pending_and_edit_sessions(conn: sqlite3.Connection) ->
     """)
 
 
+def _migration_004_phase3_ai_telemetry_and_food_memory(conn: sqlite3.Connection) -> None:
+    """Create food_memory, ai_requests telemetry, and ai_provider_health tables for Phase 3."""
+    cursor = conn.cursor()
+
+    # Food Memory: local memory of learned user food items and caloric values
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS food_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT NOT NULL UNIQUE,
+            aliases_json TEXT,
+            default_calories REAL NOT NULL,
+            default_unit TEXT DEFAULT 'serving',
+            default_portion_grams REAL,
+            confidence REAL DEFAULT 1.0,
+            source TEXT NOT NULL DEFAULT 'USER_CONFIRMED',
+            use_count INTEGER DEFAULT 1,
+            last_used_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_memory_canonical ON food_memory (canonical_name);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_memory_last_used ON food_memory (last_used_at);")
+
+    # AI Requests: structured telemetry for all AI provider calls and budget auditing
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id TEXT NOT NULL UNIQUE,
+            task_type TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            latency_ms REAL DEFAULT 0.0,
+            status TEXT NOT NULL,
+            error_type TEXT,
+            error_message TEXT,
+            fallback_used INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_created_at ON ai_requests (created_at);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_provider ON ai_requests (provider);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_status ON ai_requests (status);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_task_type ON ai_requests (task_type);")
+
+    # AI Provider Health: provider circuit breakers and operational telemetry
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_provider_health (
+            provider TEXT PRIMARY KEY,
+            consecutive_failures INTEGER DEFAULT 0,
+            circuit_open_until TEXT,
+            last_success_at TEXT,
+            last_failure_at TEXT,
+            last_error TEXT,
+            total_requests INTEGER DEFAULT 0,
+            total_errors INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+
 # Registry of ordered migrations
 MIGRATIONS: List[Migration] = [
     Migration(version=1, name="baseline_tables", up=_migration_001_baseline),
     Migration(version=2, name="performance_indexes_and_pending_items", up=_migration_002_performance_indexes_and_pending_items),
     Migration(version=3, name="phase2_pending_and_edit_sessions", up=_migration_003_phase2_pending_and_edit_sessions),
+    Migration(version=4, name="phase3_ai_telemetry_and_food_memory", up=_migration_004_phase3_ai_telemetry_and_food_memory),
 ]
 
 

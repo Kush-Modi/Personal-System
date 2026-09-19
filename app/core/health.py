@@ -7,7 +7,7 @@ import time
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -139,6 +139,49 @@ def check_telegram_api() -> ComponentHealth:
         )
 
 
+def check_ai_status() -> ComponentHealth:
+    """Zero-network check of configured AI providers and daily usage."""
+    start = time.perf_counter()
+    configured = []
+    if settings.gemini_api_key:
+        configured.append("Gemini")
+    if settings.groq_api_key:
+        configured.append("Groq")
+    if settings.openrouter_api_key:
+        configured.append("OpenRouter")
+
+    if not configured:
+        return ComponentHealth(
+            name="AI Providers",
+            status="DEGRADED",
+            details="No AI API keys configured",
+            response_time_ms=(time.perf_counter() - start) * 1000
+        )
+
+    # Check local SQLite telemetry for today's requests
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_requests = 0
+    try:
+        if settings.database_path.exists():
+            conn = sqlite3.connect(settings.database_path, timeout=2.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM ai_requests WHERE created_at LIKE ?;", (f"{today_str}%",))
+            row = cursor.fetchone()
+            if row:
+                today_requests = row[0]
+            conn.close()
+    except Exception:
+        pass
+
+    details = f"{', '.join(configured)} ready ({today_requests}/{settings.ai_daily_request_limit} used today)"
+    return ComponentHealth(
+        name="AI Providers",
+        status="OK",
+        details=details,
+        response_time_ms=(time.perf_counter() - start) * 1000
+    )
+
+
 def get_system_health() -> SystemHealthReport:
     """Run all diagnostics and assemble system health report."""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -147,7 +190,8 @@ def get_system_health() -> SystemHealthReport:
     components = {
         "Database": check_database(),
         "Disk": check_disk_storage(),
-        "Telegram API": check_telegram_api()
+        "Telegram API": check_telegram_api(),
+        "AI Providers": check_ai_status(),
     }
 
     statuses = [comp.status for comp in components.values()]

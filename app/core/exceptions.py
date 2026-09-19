@@ -64,3 +64,33 @@ class MediaProcessingError(AppError):
 class AIServiceError(AppError):
     """Raised when an AI provider or operation fails."""
     pass
+
+
+class AIBudgetExceededError(AIServiceError):
+    """Raised when daily AI request or token budget is exhausted."""
+    pass
+
+
+class AIRateLimitError(AIServiceError):
+    """Raised when an AI provider rate limits the request (HTTP 429)."""
+    pass
+
+
+class AIAuthenticationError(AIServiceError):
+    """Raised when AI provider authentication fails (HTTP 401/403)."""
+    pass
+
+
+class AIModelUnavailableError(AIServiceError):
+    """Raised when an AI model or provider endpoint is temporarily unreachable or overloaded."""
+    pass
+
+
+class AIParseError(AIServiceError):
+    """Raised when AI output fails schema parsing or JSON validation."""
+    pass
+
+
+class AITimeoutError(AIServiceError):
+    """Raised when an AI provider call times out."""
+    pass

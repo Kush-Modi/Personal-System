@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from app.core.exceptions import AlreadyProcessedError, NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.domain.models import InputSource, ItemType
-from app.input.mock_processor import MockInputProcessor
+from app.input.ai_processor import AIInputProcessor
 from app.services.pending.service import PendingItemService
 from app.telegram.keyboards import build_pending_action_keyboard
 from app.telegram.renderers import render_pending_preview
@@ -16,7 +16,7 @@ logger = get_logger("telegram.messages")
 
 pending_service = PendingItemService()
 session_manager = TelegramSessionManager()
-input_processor = MockInputProcessor()
+input_processor = AIInputProcessor()
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -37,7 +37,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     # ==================================================
-    # 2. INPUT PROCESSOR ROUTING (Deterministic / Mock)
+    # 2. INPUT PROCESSOR ROUTING (AI / Natural Language / Mock)
     # ==================================================
     result = input_processor.process_text(text)
 
@@ -70,9 +70,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
     # Unhandled text: polite guidance
+    err_note = f"\n\n{result.error_message}" if result.error_message else ""
     await update.message.reply_text(
-        "💡 You can log food with `/food Name Calories`, weight with `/weight Number`, "
-        "or try `mock food Paneer Tikka 420` to test AI confirmation workflows."
+        f"💡 You can log food with `/food Name Calories`, weight with `/weight Number`, "
+        f"send a meal photo, or describe your food in plain English.{err_note}"
     )
 
 
