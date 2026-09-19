@@ -22,6 +22,7 @@ from app.ai.schemas import (
     ExtractedReceiptItem,
     FoodExtractionResult,
     ReceiptExtractionResult,
+    parse_extracted_food_item,
 )
 from app.core.config import settings
 from app.core.exceptions import (
@@ -45,7 +46,6 @@ class GeminiProvider(AIProvider):
         api_key: Optional[str] = None,
         model_name: Optional[str] = None
     ):
-        # Explicit None check allows empty string in testing
         self.api_key = api_key if api_key is not None else settings.gemini_api_key
         self.default_model = model_name or settings.ai_default_model
         self._client = None
@@ -124,7 +124,35 @@ class GeminiProvider(AIProvider):
             )
             latency_ms = (time.perf_counter() - start_time) * 1000
 
-            text_output = response.text or ""
+            # Safely extract text without calling response.text directly.
+            # When the model returns a blocked/empty candidate, response.text
+            # raises "model output must contain either output text or tool calls".
+            # Instead we walk candidates/parts manually.
+            text_output = ""
+            finish_reason = None
+            if response.candidates:
+                candidate = response.candidates[0]
+                finish_reason = getattr(candidate, "finish_reason", None)
+                # finish_reason 1 == STOP (normal); anything else may be a block
+                if finish_reason and str(finish_reason) not in ("1", "STOP", "FinishReason.STOP"):
+                    logger.warning(
+                        f"Gemini candidate finish_reason={finish_reason} — "
+                        f"model may have been blocked or returned no content."
+                    )
+                # Walk parts to extract text safely
+                if hasattr(candidate, "content") and candidate.content:
+                    for part in getattr(candidate.content, "parts", []):
+                        part_text = getattr(part, "text", None)
+                        if part_text:
+                            text_output += part_text
+
+            if not text_output and request.json_mode:
+                raise AIServiceError(
+                    f"Gemini returned an empty response (finish_reason={finish_reason}). "
+                    "The request may have been blocked by safety filters or the model "
+                    "produced no output. Try rephrasing the prompt."
+                )
+
             prompt_tokens = 0
             completion_tokens = 0
             total_tokens = 0
@@ -154,7 +182,7 @@ class GeminiProvider(AIProvider):
                 success=True,
             )
 
-        except (AIParseError, AIAuthenticationError):
+        except (AIParseError, AIAuthenticationError, AIServiceError):
             raise
         except Exception as e:
             latency_ms = (time.perf_counter() - start_time) * 1000
@@ -196,17 +224,13 @@ class GeminiProvider(AIProvider):
         res = self.generate_structured(req)
         data = res.structured_data or {}
         items_raw = data.get("items", [])
+        if not isinstance(items_raw, list):
+            items_raw = [items_raw] if isinstance(items_raw, dict) else []
 
         extracted_items = [
-            ExtractedFoodItem(
-                food_name=item.get("food_name", "Unknown Food"),
-                estimated_calories=float(item.get("estimated_calories", 0.0)),
-                confidence=float(item.get("confidence", 0.8)),
-                portion_description=item.get("portion_description"),
-                quantity=float(item.get("quantity", 1.0)),
-                unit=item.get("unit", "serving"),
-            )
+            parse_extracted_food_item(item, default_confidence=0.85)
             for item in items_raw
+            if isinstance(item, dict)
         ]
 
         return FoodExtractionResult(
@@ -232,7 +256,7 @@ class GeminiProvider(AIProvider):
             task_type=AITaskType.FOOD_TEXT,
             prompt=prompt,
             system_instruction=FOOD_TEXT_SYSTEM_PROMPT,
-            model=settings.ai_fast_model or self.default_model,
+            model=self.default_model,
             response_schema=FOOD_EXTRACTION_JSON_SCHEMA,
             json_mode=True,
         )
@@ -240,17 +264,13 @@ class GeminiProvider(AIProvider):
         res = self.generate_structured(req)
         data = res.structured_data or {}
         items_raw = data.get("items", [])
+        if not isinstance(items_raw, list):
+            items_raw = [items_raw] if isinstance(items_raw, dict) else []
 
         extracted_items = [
-            ExtractedFoodItem(
-                food_name=item.get("food_name", "Unknown Food"),
-                estimated_calories=float(item.get("estimated_calories", 0.0)),
-                confidence=float(item.get("confidence", 0.9)),
-                portion_description=item.get("portion_description"),
-                quantity=float(item.get("quantity", 1.0)),
-                unit=item.get("unit", "serving"),
-            )
+            parse_extracted_food_item(item, default_confidence=0.9)
             for item in items_raw
+            if isinstance(item, dict)
         ]
 
         return FoodExtractionResult(
@@ -270,7 +290,6 @@ class GeminiProvider(AIProvider):
         if not self.is_available():
             raise AIServiceError("GEMINI_API_KEY is not configured.")
 
-        # Minimal receipt placeholder
         return ReceiptExtractionResult(
             merchant="Unspecified",
             total_amount=0.0,
