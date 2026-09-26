@@ -8,8 +8,15 @@ from typing import Any, Dict, List, Optional, Union
 
 
 class AITaskType(str, Enum):
+    INTENT_ACTION = "intent_action"
     FOOD_PHOTO = "food_photo"
     FOOD_TEXT = "food_text"
+    EXPENSE = "expense"
+    WEIGHT = "weight"
+    GENERAL_CHAT = "general_chat"
+    DATA_QUERY = "data_query"
+    TASK = "task"
+    REMINDER = "reminder"
     RECEIPT_PHOTO = "receipt_photo"
     GENERAL_QUERY = "general_query"
 
@@ -19,6 +26,111 @@ class AIProviderName(str, Enum):
     GROQ = "groq"
     OPENROUTER = "openrouter"
     MOCK = "mock"
+
+
+@dataclass
+class IntentResult:
+    """Unified intent and action extracted from natural language input."""
+    intent: str  # FOOD, EXPENSE, WEIGHT, TASK, REMINDER, GENERAL_CHAT, DATA_QUERY, OTHER
+    confidence: float = 1.0
+    response_mode: str = "ACTION"  # ACTION, QUERY, CHAT, CLARIFICATION
+    action: Dict[str, Any] = field(default_factory=dict)
+    chat_response: Optional[str] = None
+    missing_information: List[str] = field(default_factory=list)
+    requires_confirmation: bool = False
+    provider: str = ""
+    model: str = ""
+    raw_response: str = ""
+
+
+def parse_intent_result(data: Dict[str, Any], default_confidence: float = 0.9) -> IntentResult:
+    """Robustly transform arbitrary LLM JSON output into a strongly typed IntentResult."""
+    if not isinstance(data, dict):
+        return IntentResult(
+            intent="OTHER",
+            confidence=0.0,
+            response_mode="CLARIFICATION",
+            chat_response="I didn't quite understand that. Could you please rephrase?"
+        )
+
+    # 1. Intent resolution
+    intent_raw = data.get("intent", "OTHER")
+    intent = str(intent_raw).upper().strip() if intent_raw else "OTHER"
+    valid_intents = {"FOOD", "EXPENSE", "WEIGHT", "TASK", "REMINDER", "GENERAL_CHAT", "DATA_QUERY", "OTHER"}
+    if intent not in valid_intents:
+        # Check if intent was nested or descriptive
+        for valid in valid_intents:
+            if valid in intent:
+                intent = valid
+                break
+        else:
+            intent = "OTHER"
+
+    # 2. Confidence resolution
+    conf_raw = data.get("confidence", default_confidence)
+    try:
+        confidence = float(conf_raw) if conf_raw is not None else default_confidence
+    except (ValueError, TypeError):
+        confidence = default_confidence
+    confidence = max(0.0, min(1.0, confidence))
+
+    # 3. Response mode
+    mode_raw = data.get("response_mode", "ACTION")
+    mode = str(mode_raw).upper().strip() if mode_raw else "ACTION"
+    valid_modes = {"ACTION", "QUERY", "CHAT", "CLARIFICATION"}
+    if mode not in valid_modes:
+        if intent == "GENERAL_CHAT":
+            mode = "CHAT"
+        elif intent == "DATA_QUERY":
+            mode = "QUERY"
+        elif intent in ("FOOD", "EXPENSE", "WEIGHT", "TASK", "REMINDER"):
+            mode = "ACTION"
+        else:
+            mode = "CLARIFICATION"
+
+    # 4. Action dict extraction
+    action = data.get("action")
+    if not isinstance(action, dict):
+        action = {}
+
+    # Normalize action data if nested under intent keys (e.g. action.food, action.expense)
+    if intent == "FOOD" and "food" in action and isinstance(action["food"], dict):
+        action = action["food"]
+    elif intent == "EXPENSE" and "expense" in action and isinstance(action["expense"], dict):
+        action = action["expense"]
+    elif intent == "WEIGHT" and "weight" in action and isinstance(action["weight"], dict):
+        action = action["weight"]
+    elif intent == "TASK" and "task" in action and isinstance(action["task"], dict):
+        action = action["task"]
+    elif intent == "REMINDER" and "reminder" in action and isinstance(action["reminder"], dict):
+        action = action["reminder"]
+
+    # 5. Missing info and confirmation
+    missing_info = data.get("missing_information", [])
+    if not isinstance(missing_info, list):
+        missing_info = [str(missing_info)]
+
+    req_conf = data.get("requires_confirmation")
+    if req_conf is None:
+        # Default policy: FOOD and EXPENSE require confirmation; explicit WEIGHT does not; CHAT/QUERY do not
+        req_conf = (intent in ("FOOD", "EXPENSE") and mode == "ACTION")
+    else:
+        req_conf = bool(req_conf)
+
+    chat_resp = data.get("chat_response") or data.get("response") or data.get("reply")
+    if chat_resp is not None:
+        chat_resp = str(chat_resp).strip()
+
+    return IntentResult(
+        intent=intent,
+        confidence=confidence,
+        response_mode=mode,
+        action=action,
+        chat_response=chat_resp,
+        missing_information=missing_info,
+        requires_confirmation=req_conf,
+    )
+
 
 
 @dataclass
@@ -146,20 +258,55 @@ class FoodExtractionResult:
 @dataclass
 class ExtractedReceiptItem:
     name: str
-    price: float
+    quantity: float = 1.0
+    unit_price: Optional[float] = None
+    total_price: float = 0.0
     category: Optional[str] = None
+    price: Optional[float] = None
+
+    def __post_init__(self):
+        if self.price is not None and self.total_price == 0.0:
+            self.total_price = self.price
+        elif self.total_price != 0.0 and self.price is None:
+            self.price = self.total_price
 
 
 @dataclass
 class ReceiptExtractionResult:
     merchant: Optional[str] = None
-    total_amount: float = 0.0
-    category: str = "General"
     date_str: Optional[str] = None
+    currency: str = "INR"
     items: List[ExtractedReceiptItem] = field(default_factory=list)
+    subtotal: Optional[float] = None
+    tax: Optional[float] = None
+    discount: Optional[float] = None
+    grand_total: float = 0.0
+    total_amount: Optional[float] = None
+    category: str = "Other"
+    notes: Optional[str] = None
+    confidence: float = 1.0
+    is_reconciled: bool = True
+    mismatch_warning: Optional[str] = None
     raw_response: str = ""
     provider: str = ""
     model: str = ""
+
+    def __post_init__(self):
+        if self.total_amount is not None and self.grand_total == 0.0:
+            self.grand_total = self.total_amount
+        elif self.grand_total != 0.0 and self.total_amount is None:
+            self.total_amount = self.grand_total
+
+
+
+@dataclass
+class QueryPlan:
+    domain: str  # FOOD, EXPENSE, WEIGHT, TASK, REMINDER, MULTI
+    operation: str  # TOTAL, AVERAGE, SUM, LIST, LATEST, HIGHEST, LOWEST, TREND, COUNT, SUMMARY, COMPARE
+    date_range: Dict[str, Optional[str]] = field(default_factory=dict)  # {"start": ..., "end": ...}
+    filters: Dict[str, Any] = field(default_factory=dict)  # {"category": ..., "merchant": ...}
+    group_by: Optional[str] = None
+
 
 
 @dataclass

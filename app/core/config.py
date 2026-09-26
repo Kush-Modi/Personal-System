@@ -95,7 +95,7 @@ class Settings:
         default_factory=lambda: os.getenv("AI_FAST_MODEL", "gemini-2.5-flash-lite")
     )
     ai_default_model: str = field(
-        default_factory=lambda: os.getenv("AI_DEFAULT_MODEL", "gemini-2.5-flash")
+        default_factory=lambda: os.getenv("AI_DEFAULT_MODEL", "gemini-3.8-flash")
     )
     ai_escalation_model: str = field(
         default_factory=lambda: os.getenv("AI_ESCALATION_MODEL", "gemini-3.8-flash")

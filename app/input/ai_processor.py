@@ -37,33 +37,167 @@ class AIInputProcessor(InputProcessor):
         if cleaned.lower().startswith("mock "):
             return self.mock_processor.process_text(cleaned, context)
 
-        # 2. If AI is enabled, attempt AI extraction
+        # 2. If AI is enabled, execute unified intent and entity extraction
         if self.ai_service.is_ai_enabled():
             try:
-                result = self.ai_service.process_food_text(cleaned)
-                if result.items:
-                    # Construct aggregated name if multiple items
-                    if len(result.items) == 1:
-                        name = result.items[0].food_name
-                        cals = result.items[0].estimated_calories
-                        conf = result.items[0].confidence
+                result = self.ai_service.process_intent_action(cleaned)
+                action = result.action or {}
+
+                if result.intent == ItemType.FOOD.value:
+                    items = action.get("items", [])
+                    if items and isinstance(items, list):
+                        name = ", ".join(str(i.get("name") or i.get("food_name", "Food")).strip() for i in items)
+                        cals = action.get("total_calories")
+                        if cals is None:
+                            cals = sum(float(i.get("estimated_calories", 0.0)) for i in items)
+                        else:
+                            cals = float(cals)
                     else:
-                        name = ", ".join(item.food_name for item in result.items)
-                        cals = sum(item.estimated_calories for item in result.items)
-                        conf = min(item.confidence for item in result.items)
+                        name = str(action.get("food_name") or action.get("name") or cleaned)
+                        cals = float(action.get("calories") or action.get("total_calories") or 100.0)
 
                     return ProcessingResult(
                         success=True,
                         item_type=ItemType.FOOD.value,
                         payload={
-                            "food_name": name,
+                            "food_name": name.title() if name else "Food Item",
                             "calories": round(cals, 1),
-                            "notes": result.notes or f"Identified {len(result.items)} items",
-                            "meal_type": result.meal_type
+                            "notes": action.get("notes") or (f"Identified {len(items)} items" if items else None),
+                            "meal_type": action.get("meal_type")
                         },
-                        confidence=conf,
+                        confidence=result.confidence,
                         source=InputSource.TEXT.value,
                         requires_confirmation=True,
+                        response_mode=result.response_mode,
+                        raw_text=cleaned,
+                    )
+
+                elif result.intent == ItemType.EXPENSE.value:
+                    amt_raw = action.get("amount", 0.0)
+                    try:
+                        amt = float(amt_raw)
+                    except (ValueError, TypeError):
+                        amt = 0.0
+
+                    date_val = action.get("date")
+                    if date_val == "today":
+                        date_val = None
+
+                    return ProcessingResult(
+                        success=True,
+                        item_type=ItemType.EXPENSE.value,
+                        payload={
+                            "amount": amt,
+                            "currency": action.get("currency", "INR"),
+                            "category": action.get("category", "Other"),
+                            "merchant": action.get("merchant"),
+                            "date": date_val,
+                            "description": action.get("note") or action.get("description"),
+                        },
+                        confidence=result.confidence,
+                        source=InputSource.TEXT.value,
+                        requires_confirmation=True,
+                        response_mode=result.response_mode,
+                        raw_text=cleaned,
+                    )
+
+                elif result.intent == ItemType.WEIGHT.value:
+                    w_raw = action.get("weight_kg") or action.get("weight", 0.0)
+                    try:
+                        weight_kg = float(w_raw)
+                    except (ValueError, TypeError):
+                        weight_kg = 0.0
+
+                    date_val = action.get("date")
+                    if date_val == "today":
+                        date_val = None
+
+                    return ProcessingResult(
+                        success=True,
+                        item_type=ItemType.WEIGHT.value,
+                        payload={
+                            "weight_kg": weight_kg,
+                            "date": date_val,
+                            "unit_original": action.get("unit_original", "kg"),
+                        },
+                        confidence=result.confidence,
+                        source=InputSource.TEXT.value,
+                        requires_confirmation=result.requires_confirmation,
+                        response_mode=result.response_mode,
+                        raw_text=cleaned,
+                    )
+
+                elif result.intent == ItemType.TASK.value:
+                    return ProcessingResult(
+                        success=True,
+                        item_type=ItemType.TASK.value,
+                        payload={
+                            "title": action.get("title") or cleaned,
+                            "due_date": action.get("due_date"),
+                            "priority": action.get("priority", "Medium"),
+                        },
+                        confidence=result.confidence,
+                        source=InputSource.TEXT.value,
+                        requires_confirmation=False,
+                        response_mode=result.response_mode,
+                        raw_text=cleaned,
+                    )
+
+                elif result.intent == ItemType.REMINDER.value:
+                    return ProcessingResult(
+                        success=True,
+                        item_type=ItemType.REMINDER.value,
+                        payload={
+                            "reminder_text": action.get("reminder_text") or cleaned,
+                            "remind_at": action.get("remind_at"),
+                        },
+                        confidence=result.confidence,
+                        source=InputSource.TEXT.value,
+                        requires_confirmation=False,
+                        response_mode=result.response_mode,
+                        raw_text=cleaned,
+                    )
+
+                elif result.intent == ItemType.GENERAL_CHAT.value or result.response_mode == "CHAT":
+                    return ProcessingResult(
+                        success=True,
+                        item_type=ItemType.GENERAL_CHAT.value,
+                        payload={
+                            "reply": result.chat_response or "I'm here! How can I help you today?"
+                        },
+                        confidence=result.confidence,
+                        source=InputSource.TEXT.value,
+                        requires_confirmation=False,
+                        response_mode="CHAT",
+                        raw_text=cleaned,
+                    )
+
+                elif result.intent == ItemType.DATA_QUERY.value or result.response_mode == "QUERY":
+                    return ProcessingResult(
+                        success=True,
+                        item_type=ItemType.DATA_QUERY.value,
+                        payload={
+                            "reply": result.chat_response or "Historical query support is arriving in the next phase."
+                        },
+                        confidence=result.confidence,
+                        source=InputSource.TEXT.value,
+                        requires_confirmation=False,
+                        response_mode="QUERY",
+                        raw_text=cleaned,
+                    )
+
+                else:
+                    # CLARIFICATION or OTHER
+                    return ProcessingResult(
+                        success=True,
+                        item_type=ItemType.OTHER.value,
+                        payload={
+                            "reply": result.chat_response or "I didn't quite catch all details. Could you please clarify?"
+                        },
+                        confidence=result.confidence,
+                        source=InputSource.TEXT.value,
+                        requires_confirmation=False,
+                        response_mode="CLARIFICATION",
                         raw_text=cleaned,
                     )
 
@@ -76,6 +210,7 @@ class AIInputProcessor(InputProcessor):
                     confidence=0.0,
                     source=InputSource.TEXT.value,
                     requires_confirmation=False,
+                    response_mode="CLARIFICATION",
                     raw_text=cleaned,
                     error_message=f"⏳ Daily AI Budget Limit Reached: {e}"
                 )
@@ -99,6 +234,52 @@ class AIInputProcessor(InputProcessor):
         # 2. AI Multimodal Perception
         if self.ai_service.is_ai_enabled():
             try:
+                # Check if caption explicitly or strongly suggests a receipt, bill, or invoice
+                cap_lower = cap.lower()
+                is_receipt_hint = any(k in cap_lower for k in ("receipt", "bill", "invoice", "slip", "expense", "spent", "paid"))
+
+                if is_receipt_hint:
+                    receipt_res = self.ai_service.process_receipt_photo(image_path, caption=cap)
+                    amt = receipt_res.grand_total
+                    merchant = receipt_res.merchant
+                    cat = receipt_res.category or "Other"
+                    desc_parts = []
+                    if merchant:
+                        desc_parts.append(f"Merchant: {merchant}")
+                    if receipt_res.items:
+                        items_str = ", ".join(f"{it.name} (₹{it.total_price:.0f})" for it in receipt_res.items[:5])
+                        desc_parts.append(f"Items: {items_str}")
+                    desc = " | ".join(desc_parts) if desc_parts else (cap or "Receipt expense")
+
+                    payload = {
+                        "amount": amt,
+                        "currency": receipt_res.currency,
+                        "category": cat,
+                        "merchant": merchant,
+                        "date": receipt_res.date_str,
+                        "description": desc,
+                        "items": [
+                            {"name": it.name, "quantity": it.quantity, "unit_price": it.unit_price, "total_price": it.total_price}
+                            for it in receipt_res.items
+                        ],
+                        "subtotal": receipt_res.subtotal,
+                        "tax": receipt_res.tax,
+                        "discount": receipt_res.discount,
+                        "is_reconciled": receipt_res.is_reconciled,
+                        "mismatch_warning": receipt_res.mismatch_warning,
+                    }
+
+                    return ProcessingResult(
+                        success=True,
+                        item_type=ItemType.EXPENSE.value,
+                        payload=payload,
+                        confidence=receipt_res.confidence,
+                        source=InputSource.PHOTO.value,
+                        requires_confirmation=True,
+                        raw_text=cap,
+                    )
+
+                # Default multimodal inspection: Food photo
                 result = self.ai_service.process_food_photo(image_path, caption=cap)
                 if result.items:
                     if len(result.items) == 1:
@@ -142,3 +323,4 @@ class AIInputProcessor(InputProcessor):
 
         # 3. Fallback
         return self.mock_processor.process_photo(image_path, cap)
+

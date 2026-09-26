@@ -8,6 +8,7 @@ from app.ai.schemas import (
     AIRequest,
     AIResponse,
     FoodExtractionResult,
+    IntentResult,
     ReceiptExtractionResult,
 )
 
@@ -36,6 +37,40 @@ class AIProvider(ABC):
         """Generate structured response conforming to the request schema."""
         pass
 
+    def extract_intent_action(
+        self,
+        text: str,
+        current_date: Optional[str] = None,
+        memory_context: str = ""
+    ) -> IntentResult:
+        """Extract multi-domain intent, entities, and action from natural language input."""
+        # Default implementation delegates to extract_food_from_text for backwards compatibility
+        food_res = self.extract_food_from_text(text, memory_context=memory_context)
+        return IntentResult(
+            intent="FOOD",
+            confidence=food_res.items[0].confidence if food_res.items else 0.85,
+            response_mode="ACTION",
+            action={
+                "items": [
+                    {
+                        "name": item.food_name,
+                        "quantity": item.quantity,
+                        "unit": item.unit,
+                        "estimated_calories": item.estimated_calories,
+                    }
+                    for item in food_res.items
+                ],
+                "total_calories": food_res.total_estimated_calories,
+                "notes": food_res.notes,
+                "meal_type": food_res.meal_type,
+            },
+            requires_confirmation=True,
+            provider=food_res.provider,
+            model=food_res.model,
+            raw_response=food_res.raw_response,
+        )
+
+
     @abstractmethod
     def extract_food_from_image(
         self,
@@ -58,7 +93,10 @@ class AIProvider(ABC):
     @abstractmethod
     def extract_receipt_from_image(
         self,
-        image_path: Union[str, Path]
+        image_path: Union[str, Path],
+        caption: str = ""
     ) -> ReceiptExtractionResult:
         """Extract structured expense details from a receipt image."""
         pass
+
+

@@ -10,8 +10,14 @@ from app.ai.prompts import (
     FOOD_EXTRACTION_JSON_SCHEMA,
     FOOD_PHOTO_SYSTEM_PROMPT,
     FOOD_TEXT_SYSTEM_PROMPT,
+    RECEIPT_PHOTO_JSON_SCHEMA,
+    RECEIPT_PHOTO_SYSTEM_PROMPT,
+    UNIFIED_INTENT_JSON_SCHEMA,
+    UNIFIED_NLU_SYSTEM_PROMPT,
     build_food_photo_prompt,
     build_food_text_prompt,
+    build_receipt_photo_prompt,
+    build_unified_nlu_prompt,
 )
 from app.ai.provider import AIProvider
 from app.ai.schemas import (
@@ -21,8 +27,10 @@ from app.ai.schemas import (
     ExtractedFoodItem,
     ExtractedReceiptItem,
     FoodExtractionResult,
+    IntentResult,
     ReceiptExtractionResult,
     parse_extracted_food_item,
+    parse_intent_result,
 )
 from app.core.config import settings
 from app.core.exceptions import (
@@ -200,6 +208,34 @@ class GeminiProvider(AIProvider):
             else:
                 raise AIServiceError(f"Gemini error: {e}") from e
 
+    def extract_intent_action(
+        self,
+        text: str,
+        current_date: Optional[str] = None,
+        memory_context: str = ""
+    ) -> IntentResult:
+        """Extract multi-domain intent and structured action from natural language text using Gemini."""
+        if not self.is_available():
+            raise AIServiceError("GEMINI_API_KEY is not configured.")
+
+        prompt = build_unified_nlu_prompt(text, current_date=current_date, memory_context=memory_context)
+        req = AIRequest(
+            task_type=AITaskType.INTENT_ACTION,
+            prompt=prompt,
+            system_instruction=UNIFIED_NLU_SYSTEM_PROMPT,
+            model=self.default_model,
+            response_schema=UNIFIED_INTENT_JSON_SCHEMA,
+            json_mode=True,
+        )
+
+        res = self.generate_structured(req)
+        data = res.structured_data or {}
+        intent_res = parse_intent_result(data, default_confidence=0.92)
+        intent_res.provider = self.name
+        intent_res.model = res.model
+        intent_res.raw_response = res.content
+        return intent_res
+
     def extract_food_from_image(
         self,
         image_path: Union[str, Path],
@@ -284,18 +320,109 @@ class GeminiProvider(AIProvider):
 
     def extract_receipt_from_image(
         self,
-        image_path: Union[str, Path]
+        image_path: Union[str, Path],
+        caption: str = ""
     ) -> ReceiptExtractionResult:
-        """Extract receipt information from image."""
+        """Extract structured financial data, items, taxes, and totals from a receipt image."""
         if not self.is_available():
             raise AIServiceError("GEMINI_API_KEY is not configured.")
 
-        return ReceiptExtractionResult(
-            merchant="Unspecified",
-            total_amount=0.0,
-            category="General",
-            items=[],
-            raw_response="Receipt perception not yet activated.",
-            provider=self.name,
+        prompt = build_receipt_photo_prompt(caption=caption)
+        req = AIRequest(
+            task_type=AITaskType.RECEIPT_PHOTO,
+            prompt=prompt,
+            system_instruction=RECEIPT_PHOTO_SYSTEM_PROMPT,
+            image_path=image_path,
             model=self.default_model,
+            response_schema=RECEIPT_PHOTO_JSON_SCHEMA,
+            json_mode=True,
         )
+
+        res = self.generate_structured(req)
+        data = res.structured_data or {}
+
+        items_raw = data.get("items", [])
+        if not isinstance(items_raw, list):
+            items_raw = [items_raw] if isinstance(items_raw, dict) else []
+
+        extracted_items: List[ExtractedReceiptItem] = []
+        for it in items_raw:
+            if isinstance(it, dict):
+                name = str(it.get("name") or "Item").strip()
+                try:
+                    tot_p = float(it.get("total_price", 0.0))
+                except (ValueError, TypeError):
+                    tot_p = 0.0
+                try:
+                    qty = float(it.get("quantity", 1.0))
+                except (ValueError, TypeError):
+                    qty = 1.0
+                unit_p = it.get("unit_price")
+                try:
+                    unit_p = float(unit_p) if unit_p is not None else None
+                except (ValueError, TypeError):
+                    unit_p = None
+
+                extracted_items.append(
+                    ExtractedReceiptItem(
+                        name=name,
+                        quantity=qty,
+                        unit_price=unit_p,
+                        total_price=tot_p,
+                    )
+                )
+
+        try:
+            grand_total = float(data.get("grand_total", 0.0))
+        except (ValueError, TypeError):
+            grand_total = 0.0
+
+        subtotal = data.get("subtotal")
+        try:
+            subtotal = float(subtotal) if subtotal is not None else None
+        except (ValueError, TypeError):
+            subtotal = None
+
+        tax = data.get("tax")
+        try:
+            tax = float(tax) if tax is not None else None
+        except (ValueError, TypeError):
+            tax = None
+
+        discount = data.get("discount")
+        try:
+            discount = float(discount) if discount is not None else None
+        except (ValueError, TypeError):
+            discount = None
+
+        conf = data.get("confidence", 0.9)
+        try:
+            conf = float(conf)
+        except (ValueError, TypeError):
+            conf = 0.9
+
+        category = str(data.get("category") or "Other").strip()
+        valid_cats = {
+            "Food & Dining", "Groceries", "Transport", "Shopping", "Bills",
+            "Entertainment", "Health", "Education", "Travel", "Subscriptions", "Other"
+        }
+        if category not in valid_cats:
+            category = "Other"
+
+        return ReceiptExtractionResult(
+            merchant=data.get("merchant"),
+            date_str=data.get("date"),
+            currency=str(data.get("currency") or "INR"),
+            items=extracted_items,
+            subtotal=subtotal,
+            tax=tax,
+            discount=discount,
+            grand_total=grand_total,
+            category=category,
+            notes=data.get("notes"),
+            confidence=conf,
+            raw_response=res.content,
+            provider=self.name,
+            model=res.model,
+        )
+

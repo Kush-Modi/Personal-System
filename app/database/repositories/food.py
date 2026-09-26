@@ -115,3 +115,37 @@ class FoodRepository(BaseRepository):
             )
             row = cursor.fetchone()
             return int(row[0]), float(row[1])
+
+    def get_total_calories_range(
+        self,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> Tuple[float, int, float]:
+        """Return (total_calories, distinct_days, average_per_day) across date range."""
+        conditions = []
+        params = []
+        if start_date:
+            conditions.append("DATE(created_at, 'localtime') >= ?")
+            params.append(start_date.isoformat())
+        if end_date:
+            conditions.append("DATE(created_at, 'localtime') <= ?")
+            params.append(end_date.isoformat())
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        with self.connection(commit=False) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT COALESCE(SUM(calories), 0.0), COUNT(DISTINCT DATE(created_at, 'localtime'))
+                FROM food
+                {where_clause};
+                """,
+                params
+            )
+            row = cursor.fetchone()
+            total_cals = float(row[0]) if row else 0.0
+            days = int(row[1]) if row and row[1] else 1
+            avg = total_cals / max(1, days)
+            return total_cals, days, avg
+

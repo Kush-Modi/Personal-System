@@ -4,7 +4,8 @@ from datetime import date, datetime
 from typing import Any, Dict, Optional, Union
 
 from app.core.exceptions import DomainValidationError, SchemaValidationError, ValidationError
-from app.domain.models import ExpensePayload, FoodPayload, ItemType, TaskPayload
+from app.core.exceptions import DomainValidationError, SchemaValidationError, ValidationError
+from app.domain.models import ExpensePayload, FoodPayload, ItemType, ReminderPayload, TaskPayload, WeightPayload
 
 
 def _validate_iso_date(date_str: Optional[str]) -> None:
@@ -176,11 +177,90 @@ def validate_task_domain(payload: TaskPayload) -> None:
         raise DomainValidationError("Task title cannot exceed 255 characters.")
 
 
+def validate_weight_schema(payload: Dict[str, Any]) -> WeightPayload:
+    """Validate raw payload dictionary into a WeightPayload schema."""
+    if not isinstance(payload, dict):
+        raise SchemaValidationError("Payload must be a dictionary.")
+
+    weight_raw = payload.get("weight_kg") or payload.get("weight")
+    if weight_raw is None:
+        raise SchemaValidationError("Missing required field 'weight_kg'.")
+
+    try:
+        weight_kg = float(weight_raw)
+    except (ValueError, TypeError):
+        raise SchemaValidationError(f"Invalid weight value '{weight_raw}' (expected numeric).")
+
+    date_val = payload.get("date")
+    if date_val is not None and not isinstance(date_val, str):
+        raise SchemaValidationError("Field 'date' must be a string in YYYY-MM-DD format.")
+    _validate_iso_date(date_val)
+
+    confidence_raw = payload.get("confidence", 1.0)
+    try:
+        confidence = float(confidence_raw)
+    except (ValueError, TypeError):
+        confidence = 1.0
+
+    return WeightPayload(
+        weight_kg=weight_kg,
+        date=date_val.strip() if date_val else None,
+        unit_original=str(payload.get("unit_original", "kg")),
+        confidence=confidence,
+    )
+
+
+def validate_weight_domain(payload: WeightPayload) -> None:
+    """Validate business rules for weight records."""
+    if payload.weight_kg <= 0:
+        raise DomainValidationError("Weight must be greater than 0.")
+    if payload.weight_kg > 500:
+        raise DomainValidationError("Weight cannot exceed 500 kg.")
+    if payload.weight_kg < 10:
+        raise DomainValidationError("Weight below 10 kg seems invalid — please check the value.")
+
+
+def validate_reminder_schema(payload: Dict[str, Any]) -> ReminderPayload:
+    """Validate raw payload into a ReminderPayload schema (lightweight — used for Phase 4.5 storage)."""
+    if not isinstance(payload, dict):
+        raise SchemaValidationError("Payload must be a dictionary.")
+
+    text = payload.get("reminder_text") or payload.get("text") or payload.get("title")
+    if not text or not isinstance(text, str):
+        raise SchemaValidationError("Missing or invalid 'reminder_text' field.")
+
+    remind_at = payload.get("remind_at")
+    confidence_raw = payload.get("confidence", 1.0)
+    try:
+        confidence = float(confidence_raw)
+    except (ValueError, TypeError):
+        confidence = 1.0
+
+    return ReminderPayload(
+        reminder_text=text.strip(),
+        remind_at=remind_at,
+        is_recurring=bool(payload.get("is_recurring", False)),
+        recurrence_rule=payload.get("recurrence_rule"),
+        confidence=confidence,
+    )
+
+
+def validate_reminder_domain(payload: ReminderPayload) -> None:
+    """Validate business rules for reminder records."""
+    if not payload.reminder_text:
+        raise DomainValidationError("Reminder text cannot be empty.")
+    if len(payload.reminder_text) > 500:
+        raise DomainValidationError("Reminder text cannot exceed 500 characters.")
+
+
 # ==================================================
 # COMPREHENSIVE VALIDATOR
 # ==================================================
 
-def validate_payload(item_type: Union[ItemType, str], payload: Dict[str, Any]) -> Union[FoodPayload, ExpensePayload, TaskPayload, Dict[str, Any]]:
+def validate_payload(
+    item_type: Union[ItemType, str],
+    payload: Dict[str, Any]
+) -> Union[FoodPayload, ExpensePayload, WeightPayload, TaskPayload, ReminderPayload, Dict[str, Any]]:
     """
     Execute full Level 1 (Schema) and Level 2 (Domain) validation.
     Returns typed payload dataclass on success.
@@ -197,13 +277,23 @@ def validate_payload(item_type: Union[ItemType, str], payload: Dict[str, Any]) -
         validate_expense_domain(exp_obj)
         return exp_obj
 
+    elif item_enum == ItemType.WEIGHT:
+        w_obj = validate_weight_schema(payload)
+        validate_weight_domain(w_obj)
+        return w_obj
+
     elif item_enum == ItemType.TASK:
         task_obj = validate_task_schema(payload)
         validate_task_domain(task_obj)
         return task_obj
 
+    elif item_enum == ItemType.REMINDER:
+        rem_obj = validate_reminder_schema(payload)
+        validate_reminder_domain(rem_obj)
+        return rem_obj
+
     else:
-        # Fallback for OTHER/untyped
+        # GENERAL_CHAT, DATA_QUERY, OTHER — no domain validation required
         if not isinstance(payload, dict):
             raise SchemaValidationError("Payload must be a dictionary.")
         return payload

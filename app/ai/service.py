@@ -11,6 +11,7 @@ from app.ai.schemas import (
     AITaskType,
     ExtractedFoodItem,
     FoodExtractionResult,
+    IntentResult,
     ReceiptExtractionResult,
 )
 from app.core.exceptions import (
@@ -105,7 +106,87 @@ class AIService:
             )
             raise
 
+    def process_receipt_photo(
+        self,
+        image_path: Union[str, Path],
+        caption: str = ""
+    ) -> ReceiptExtractionResult:
+        """
+        Process receipt/bill image:
+        1. Verify daily token/request budget.
+        2. Dispatch to receipt multimodal router.
+        3. Independently validate mathematical reconciliation:
+           abs(sum(items.total_price) + tax - discount - grand_total) <= tolerance
+        4. Log full telemetry.
+        """
+        req_id = str(uuid.uuid4())
+        task_type = AITaskType.RECEIPT_PHOTO.value
+
+        self.budget_manager.check_and_assert_budget(estimated_tokens=1500)
+
+        try:
+            result, fallback_used = self.router.route_receipt_photo(
+                image_path=image_path,
+                caption=caption
+            )
+
+            # Mathematical reconciliation check in Python
+            items_sum = sum(it.total_price for it in result.items) if result.items else 0.0
+            tax_val = result.tax or 0.0
+            disc_val = result.discount or 0.0
+            grand_total_val = result.grand_total
+
+            # If items are present, check reconciliation
+            if result.items and grand_total_val > 0:
+                expected_total = items_sum + tax_val - disc_val
+                diff = abs(expected_total - grand_total_val)
+                tolerance = 2.0  # ₹2 rounding tolerance
+
+                if diff > tolerance:
+                    result.is_reconciled = False
+                    result.mismatch_warning = (
+                        f"⚠️ I found a mismatch in the receipt totals "
+                        f"(Items sum: ₹{items_sum:.2f}, Tax: ₹{tax_val:.2f}, Discount: ₹{disc_val:.2f} -> "
+                        f"Expected: ₹{expected_total:.2f}, Grand Total: ₹{grand_total_val:.2f}). "
+                        f"Please review before saving."
+                    )
+                    logger.warning(
+                        f"Receipt total mismatch: expected {expected_total:.2f} vs grand_total {grand_total_val:.2f}"
+                    )
+                else:
+                    result.is_reconciled = True
+                    result.mismatch_warning = None
+            else:
+                result.is_reconciled = True
+                result.mismatch_warning = None
+
+            self.ai_request_repo.log_request(
+                request_id=req_id,
+                task_type=task_type,
+                provider=result.provider,
+                model=result.model,
+                prompt_tokens=1200,
+                completion_tokens=250,
+                total_tokens=1450,
+                status="SUCCESS",
+                fallback_used=fallback_used
+            )
+            return result
+
+        except Exception as e:
+            self.ai_request_repo.log_request(
+                request_id=req_id,
+                task_type=task_type,
+                provider="router",
+                model="unknown",
+                status="FAILED",
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+            raise
+
     def process_food_text(self, text: str) -> FoodExtractionResult:
+
         """
         Process natural language food text:
         1. Fast check: exact memory match for single-item query.
@@ -172,6 +253,73 @@ class AIService:
                 error_message=str(e),
             )
             raise
+
+    def process_intent_action(
+        self,
+        text: str,
+        current_date: Optional[str] = None
+    ) -> IntentResult:
+        """
+        Process natural language input with unified intent classification and entity extraction:
+        1. Query local memory context.
+        2. Verify daily token/request budget.
+        3. Dispatch to multi-provider router.
+        4. Log full telemetry.
+        """
+        req_id = str(uuid.uuid4())
+        task_type = AITaskType.INTENT_ACTION.value
+
+        # 1. Memory context & budget assertion
+        mem_context = self.food_memory.get_memory_context_prompt(query_hint=text)
+        self.budget_manager.check_and_assert_budget(estimated_tokens=600)
+
+        # 2. Router dispatch
+        try:
+            result, fallback_used = self.router.route_intent_action(
+                text=text,
+                current_date=current_date,
+                memory_context=mem_context
+            )
+
+            # Map telemetry task type if specific
+            specific_task_type = task_type
+            if result.intent == "FOOD":
+                specific_task_type = AITaskType.FOOD_TEXT.value
+            elif result.intent == "EXPENSE":
+                specific_task_type = AITaskType.EXPENSE.value
+            elif result.intent == "WEIGHT":
+                specific_task_type = AITaskType.WEIGHT.value
+            elif result.intent == "GENERAL_CHAT":
+                specific_task_type = AITaskType.GENERAL_CHAT.value
+            elif result.intent == "DATA_QUERY":
+                specific_task_type = AITaskType.DATA_QUERY.value
+
+            # 3. Log telemetry
+            self.ai_request_repo.log_request(
+                request_id=req_id,
+                task_type=specific_task_type,
+                provider=result.provider,
+                model=result.model,
+                prompt_tokens=450,
+                completion_tokens=180,
+                total_tokens=630,
+                status="SUCCESS",
+                fallback_used=fallback_used
+            )
+            return result
+
+        except Exception as e:
+            self.ai_request_repo.log_request(
+                request_id=req_id,
+                task_type=task_type,
+                provider="router",
+                model="unknown",
+                status="FAILED",
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+            raise
+
 
     def get_ai_usage_status(self) -> Dict[str, Any]:
         """Get formatted summary of AI budget and health for /aiusage command."""

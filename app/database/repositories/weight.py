@@ -100,3 +100,34 @@ class WeightRepository(BaseRepository):
                 (date_str,)
             )
             return cursor.rowcount > 0
+
+    def get_range(
+        self,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> List[Tuple[float, str]]:
+        """Fetch weight entries in chronological order across date range."""
+        conditions = []
+        params = []
+        if start_date:
+            conditions.append("DATE(created_at, 'localtime') >= ?")
+            params.append(start_date.isoformat())
+        if end_date:
+            conditions.append("DATE(created_at, 'localtime') <= ?")
+            params.append(end_date.isoformat())
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        with self.connection(commit=False) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT weight, created_at
+                FROM weights
+                {where_clause}
+                ORDER BY DATE(created_at, 'localtime') ASC;
+                """,
+                params
+            )
+            return [(float(row["weight"]), str(row["created_at"])) for row in cursor.fetchall()]
+

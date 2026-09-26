@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from app.core.exceptions import ValidationError
 from app.database.repositories.food import FoodRepository
@@ -44,13 +44,36 @@ class WeightService:
         self.weight_repo = weight_repository or WeightRepository()
         self.food_repo = food_repository or FoodRepository()
 
-    def record_weight(self, target_date: date, weight: float) -> Tuple[bool, float]:
+    def record_weight(
+        self,
+        target_date: Optional[Union[date, str]] = None,
+        weight: Optional[float] = None,
+        *,
+        weight_kg: Optional[float] = None,
+        date: Optional[Union[date, str]] = None,
+    ) -> Tuple[bool, float]:
         """Record or update weight for a given date. Returns (is_updated, weight)."""
-        if weight <= 0 or weight > 500:
+        final_weight = weight if weight is not None else weight_kg
+        if final_weight is None:
+            raise ValidationError("Weight value is required.")
+
+        final_date_val = target_date if target_date is not None else date
+        if final_date_val is None:
+            final_date = datetime.now().date()
+        elif isinstance(final_date_val, str):
+            try:
+                final_date = datetime.strptime(final_date_val.strip(), "%Y-%m-%d").date()
+            except ValueError:
+                final_date = datetime.now().date()
+        else:
+            final_date = final_date_val
+
+        if final_weight <= 0 or final_weight > 500:
             raise ValidationError("Weight must be between 0 and 500 kg.")
 
-        is_updated, _ = self.weight_repo.upsert_for_date(target_date, weight)
-        return is_updated, weight
+        is_updated, _ = self.weight_repo.upsert_for_date(final_date, final_weight)
+        return is_updated, final_weight
+
 
     def get_weight_for_date(self, target_date: date) -> Optional[float]:
         """Fetch recorded weight for a specific date."""

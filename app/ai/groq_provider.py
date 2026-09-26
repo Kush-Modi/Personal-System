@@ -10,8 +10,10 @@ from typing import Any, Dict, Optional, Union
 from app.ai.prompts import (
     FOOD_PHOTO_SYSTEM_PROMPT,
     FOOD_TEXT_SYSTEM_PROMPT,
+    UNIFIED_NLU_SYSTEM_PROMPT,
     build_food_photo_prompt,
     build_food_text_prompt,
+    build_unified_nlu_prompt,
 )
 from app.ai.provider import AIProvider
 from app.ai.schemas import (
@@ -21,7 +23,9 @@ from app.ai.schemas import (
     ExtractedFoodItem,
     ExtractedReceiptItem,
     FoodExtractionResult,
+    IntentResult,
     ReceiptExtractionResult,
+    parse_intent_result,
 )
 from app.core.config import settings
 from app.core.exceptions import (
@@ -178,6 +182,33 @@ class GroqProvider(AIProvider):
             else:
                 raise AIServiceError(f"Groq error: {e}") from e
 
+    def extract_intent_action(
+        self,
+        text: str,
+        current_date: Optional[str] = None,
+        memory_context: str = ""
+    ) -> IntentResult:
+        """Extract multi-domain intent and structured action from natural text via Groq fallback."""
+        if not self.is_available():
+            raise AIServiceError("GROQ_API_KEY is not configured.")
+
+        prompt = build_unified_nlu_prompt(text, current_date=current_date, memory_context=memory_context)
+        req = AIRequest(
+            task_type=AITaskType.INTENT_ACTION,
+            prompt=prompt,
+            system_instruction=UNIFIED_NLU_SYSTEM_PROMPT,
+            model=self.default_model,
+            json_mode=True,
+        )
+
+        res = self.generate_structured(req)
+        data = res.structured_data or {}
+        intent_res = parse_intent_result(data, default_confidence=0.85)
+        intent_res.provider = self.name
+        intent_res.model = res.model
+        intent_res.raw_response = res.content
+        return intent_res
+
     def extract_food_from_image(
         self,
         image_path: Union[str, Path],
@@ -270,7 +301,8 @@ class GroqProvider(AIProvider):
 
     def extract_receipt_from_image(
         self,
-        image_path: Union[str, Path]
+        image_path: Union[str, Path],
+        caption: str = ""
     ) -> ReceiptExtractionResult:
         """Placeholder receipt extraction."""
         if not self.is_available():
@@ -278,10 +310,11 @@ class GroqProvider(AIProvider):
 
         return ReceiptExtractionResult(
             merchant="Unspecified",
-            total_amount=0.0,
-            category="General",
+            grand_total=0.0,
+            category="Other",
             items=[],
-            raw_response="Receipt extraction not active.",
+            raw_response="Receipt extraction not active on Groq.",
             provider=self.name,
             model=self.default_model,
         )
+

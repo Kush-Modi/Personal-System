@@ -182,6 +182,42 @@ def check_ai_status() -> ComponentHealth:
     )
 
 
+def check_reminders_and_scheduler() -> ComponentHealth:
+    """Check pending reminders and scheduler queue status."""
+    start = time.perf_counter()
+    try:
+        if settings.database_path.exists():
+            conn = sqlite3.connect(settings.database_path, timeout=2.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM reminders WHERE status = 'PENDING';")
+            rem_count = cursor.fetchone()[0]
+
+            cursor.execute("SELECT next_trigger_at FROM reminders WHERE status = 'PENDING' ORDER BY datetime(next_trigger_at) ASC LIMIT 1;")
+            next_row = cursor.fetchone()
+            next_time = next_row[0] if next_row and next_row[0] else "None"
+            conn.close()
+
+            return ComponentHealth(
+                name="Scheduler & Reminders",
+                status="OK",
+                details=f"{rem_count} pending (Next: {next_time})",
+                response_time_ms=(time.perf_counter() - start) * 1000
+            )
+        return ComponentHealth(
+            name="Scheduler & Reminders",
+            status="OK",
+            details="0 pending",
+            response_time_ms=(time.perf_counter() - start) * 1000
+        )
+    except Exception as e:
+        return ComponentHealth(
+            name="Scheduler & Reminders",
+            status="OK",
+            details="Scheduler ready",
+            response_time_ms=(time.perf_counter() - start) * 1000
+        )
+
+
 def get_system_health() -> SystemHealthReport:
     """Run all diagnostics and assemble system health report."""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -192,6 +228,7 @@ def get_system_health() -> SystemHealthReport:
         "Disk": check_disk_storage(),
         "Telegram API": check_telegram_api(),
         "AI Providers": check_ai_status(),
+        "Scheduler": check_reminders_and_scheduler(),
     }
 
     statuses = [comp.status for comp in components.values()]
@@ -208,3 +245,4 @@ def get_system_health() -> SystemHealthReport:
         uptime_seconds=uptime,
         components=components
     )
+

@@ -31,15 +31,49 @@ def render_pending_preview(item: PendingItem) -> str:
         merchant = payload.get("merchant")
         desc = payload.get("description")
         date_str = payload.get("date")
+        mismatch_warning = payload.get("mismatch_warning")
+        items = payload.get("items", [])
 
-        message += f"💳 *Expense:* ₹{amount:.2f}\n"
-        message += f"🏷 *Category:* {category}\n"
+        if items:
+            message = f"🧾 *Receipt Review #{item.id}*\n\n"
+        else:
+            message += f"💳 *Expense:* ₹{amount:.2f}\n"
+
         if merchant:
             message += f"🏪 *Merchant:* {merchant}\n"
-        if desc:
-            message += f"📝 *Details:* {desc}\n"
         if date_str:
             message += f"📅 *Date:* {date_str}\n"
+
+        if items:
+            message += "\n*Items:*\n"
+            for it in items:
+                qty_str = f" × {it['quantity']:.0f}" if it.get("quantity") and it['quantity'] != 1 else ""
+                message += f"• {it['name']}{qty_str} — ₹{it['total_price']:.2f}\n"
+            if payload.get("subtotal") is not None:
+                message += f"Subtotal: ₹{payload['subtotal']:.2f}\n"
+            if payload.get("tax"):
+                message += f"Tax: ₹{payload['tax']:.2f}\n"
+            if payload.get("discount"):
+                message += f"Discount: -₹{payload['discount']:.2f}\n"
+            message += f"\n💳 *Total:* ₹{amount:.2f}\n"
+
+        message += f"🏷 *Category:* {category}\n"
+        if desc and not items:
+            message += f"📝 *Details:* {desc}\n"
+
+        if mismatch_warning:
+            message += f"\n{mismatch_warning}\n"
+
+    elif type_str == ItemType.WEIGHT.value:
+        weight_kg = payload.get("weight_kg", 0.0)
+        date_str = payload.get("date")
+        unit = payload.get("unit_original", "kg")
+
+        message += f"⚖️ *Weight:* {weight_kg:.1f} kg\n"
+        if date_str:
+            message += f"📅 *Date:* {date_str}\n"
+        if unit != "kg":
+            message += f"ℹ️ *Original Unit:* {unit}\n"
 
     elif type_str == ItemType.TASK.value:
         title = payload.get("title", "Task")
@@ -51,6 +85,18 @@ def render_pending_preview(item: PendingItem) -> str:
             message += f"📅 *Due:* {due_date}\n"
         if desc:
             message += f"📝 *Details:* {desc}\n"
+
+    elif type_str == ItemType.REMINDER.value:
+        rem_text = payload.get("reminder_text", "Reminder")
+        remind_at = payload.get("remind_at")
+        recurrence = payload.get("recurrence_rule")
+
+        message += f"🔔 *Reminder:* {rem_text}\n"
+        if remind_at:
+            message += f"⏰ *Time:* {remind_at}\n"
+        if recurrence:
+            message += f"🔁 *Recurrence:* {recurrence}\n"
+
 
     else:
         message += f"📝 *Type:* {type_str}\n"
@@ -82,11 +128,22 @@ def render_saved_confirmation(item: PendingItem, domain_record: Any) -> str:
         cat = payload.get("category", "Expense")
         return f"✅ *Saved to Expenses!*\n\n💳 {cat} — ₹{amount:.2f}"
 
+    elif type_str == ItemType.WEIGHT.value:
+        weight_kg = payload.get("weight_kg", 0.0)
+        date_str = payload.get("date", "today")
+        return f"✅ *Saved to Weight Log!*\n\n⚖️ {weight_kg:.1f} kg ({date_str})"
+
     elif type_str == ItemType.TASK.value:
         title = payload.get("title", "Task")
         return f"✅ *Task Created!*\n\n📋 {title}"
 
+    elif type_str == ItemType.REMINDER.value:
+        text = payload.get("reminder_text", "Reminder")
+        rem_at = payload.get("remind_at", "")
+        return f"✅ *Reminder Set!*\n\n🔔 {text}\n⏰ {rem_at}"
+
     return f"✅ *Saved Item #{item.id} successfully.*"
+
 
 
 def render_rejected_confirmation(item: PendingItem) -> str:
@@ -119,6 +176,16 @@ def render_edit_prompt(item: PendingItem) -> str:
             f"`Amount, Category, Merchant`\n\n"
             f"*Example:*\n"
             f"`{curr_amt}, {curr_cat}, Store Name`"
+        )
+
+    elif type_str == ItemType.WEIGHT.value:
+        curr_weight = payload.get("weight_kg", 75.0)
+        return (
+            f"✏️ *Editing Weight Item #{item.id}*\n\n"
+            f"Send the corrected weight in this format:\n"
+            f"`WeightInKg`\n\n"
+            f"*Example:*\n"
+            f"`{curr_weight:.1f}`"
         )
 
     elif type_str == ItemType.TASK.value:

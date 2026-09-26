@@ -9,6 +9,10 @@ from app.database.repositories.ai_request import (
     AIRequestRepository,
 )
 from app.database.repositories.base import BaseRepository
+from app.database.repositories.conversation_context import (
+    ConversationContextRecord,
+    ConversationContextRepository,
+)
 from app.database.repositories.edit_session import EditSessionRepository
 from app.database.repositories.expense import ExpenseRecord, ExpenseRepository
 from app.database.repositories.food import FoodRecord, FoodRepository
@@ -17,6 +21,8 @@ from app.database.repositories.food_memory import (
     FoodMemoryRepository,
 )
 from app.database.repositories.pending_items import PendingItemRepository
+from app.database.repositories.reminder import ReminderRecord, ReminderRepository
+from app.database.repositories.task import TaskRecord, TaskRepository
 from app.database.repositories.weight import WeightRecord, WeightRepository
 
 __all__ = [
@@ -35,4 +41,11 @@ __all__ = [
     "AIRequestRecord",
     "AIProviderHealthRepository",
     "AIProviderHealthRecord",
+    "TaskRepository",
+    "TaskRecord",
+    "ReminderRepository",
+    "ReminderRecord",
+    "ConversationContextRepository",
+    "ConversationContextRecord",
 ]
+

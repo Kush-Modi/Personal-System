@@ -180,13 +180,78 @@ def _migration_004_phase3_ai_telemetry_and_food_memory(conn: sqlite3.Connection)
     """)
 
 
+def _migration_005_phase4_tasks_reminders_conversation(conn: sqlite3.Connection) -> None:
+    """Create persistent tasks, reminders, and short-term conversation context tables for Phase 4."""
+    cursor = conn.cursor()
+
+    # Tasks table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER DEFAULT 0,
+            title TEXT NOT NULL,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'PENDING',
+            priority TEXT NOT NULL DEFAULT 'MEDIUM',
+            due_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT,
+            source TEXT DEFAULT 'NATURAL_LANGUAGE'
+        );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks (due_at);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks (created_at);")
+
+    # Reminders table with state transitions (PENDING -> CLAIMED -> SENT / TRIGGERED)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER,
+            user_id INTEGER DEFAULT 0,
+            reminder_text TEXT NOT NULL,
+            remind_at TEXT NOT NULL,
+            recurrence TEXT,
+            timezone TEXT DEFAULT 'Asia/Kolkata',
+            status TEXT NOT NULL DEFAULT 'PENDING',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_triggered_at TEXT,
+            next_trigger_at TEXT,
+            FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE SET NULL
+        );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders (status);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminders_remind_at ON reminders (remind_at);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminders_next_trigger ON reminders (next_trigger_at);")
+
+    # Short-term Conversation Context table (multi-turn memory with TTL)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conversation_context (
+            user_id INTEGER PRIMARY KEY,
+            context_id TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'IDLE',
+            last_intent TEXT,
+            active_pending_id INTEGER,
+            recent_messages_json TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY (active_pending_id) REFERENCES pending_items (id) ON DELETE SET NULL
+        );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversation_context_expires ON conversation_context (expires_at);")
+
+
 # Registry of ordered migrations
 MIGRATIONS: List[Migration] = [
     Migration(version=1, name="baseline_tables", up=_migration_001_baseline),
     Migration(version=2, name="performance_indexes_and_pending_items", up=_migration_002_performance_indexes_and_pending_items),
     Migration(version=3, name="phase2_pending_and_edit_sessions", up=_migration_003_phase2_pending_and_edit_sessions),
     Migration(version=4, name="phase3_ai_telemetry_and_food_memory", up=_migration_004_phase3_ai_telemetry_and_food_memory),
+    Migration(version=5, name="phase4_tasks_reminders_conversation", up=_migration_005_phase4_tasks_reminders_conversation),
 ]
+
 
 
 def init_version_table(conn: sqlite3.Connection) -> None:

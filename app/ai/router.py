@@ -13,6 +13,7 @@ from app.ai.schemas import (
     AIResponse,
     AITaskType,
     FoodExtractionResult,
+    IntentResult,
     ReceiptExtractionResult,
 )
 from app.core.config import settings
@@ -154,3 +155,94 @@ class AIRouter:
                 errors.append(f"{provider_name}: {e}")
 
         raise AIServiceError(f"All text providers failed for food text: {'; '.join(errors)}")
+
+    def route_intent_action(
+        self,
+        text: str,
+        current_date: Optional[str] = None,
+        memory_context: str = ""
+    ) -> Tuple[IntentResult, bool]:
+        """
+        Route natural language understanding and multi-domain extraction.
+        Primary: Gemini (gemini-3.8-flash).
+        Fallback: Groq (openai/gpt-oss-20b) -> OpenRouter.
+        Returns: (IntentResult, fallback_used).
+        """
+        chain: List[str] = ["gemini", "groq", "openrouter"]
+        errors = []
+
+        for idx, provider_name in enumerate(chain):
+            if not self.is_provider_usable(provider_name):
+                logger.debug(f"Skipping provider '{provider_name}' for intent extraction (unavailable or circuit open).")
+                continue
+
+            provider = self.get_provider(provider_name)
+            if not provider:
+                continue
+
+            try:
+                logger.info(f"Dispatching intent extraction to provider: {provider_name}")
+                result = provider.extract_intent_action(
+                    text=text,
+                    current_date=current_date,
+                    memory_context=memory_context
+                )
+                self.health_repo.record_success(provider_name)
+                fallback_used = (idx > 0)
+                return result, fallback_used
+
+            except (AIRateLimitError, AIModelUnavailableError, AITimeoutError) as e:
+                logger.warning(f"Provider '{provider_name}' failed with transient error: {e}")
+                self.health_repo.record_failure(provider_name, str(e))
+                errors.append(f"{provider_name}: {e}")
+            except Exception as e:
+                logger.error(f"Provider '{provider_name}' failed with unexpected error: {e}", exc_info=True)
+                self.health_repo.record_failure(provider_name, str(e))
+                errors.append(f"{provider_name}: {e}")
+
+        raise AIServiceError(f"All text providers failed for intent extraction: {'; '.join(errors)}")
+
+    def route_receipt_photo(
+        self,
+        image_path: Union[str, Path],
+        caption: str = ""
+    ) -> Tuple[ReceiptExtractionResult, bool]:
+        """
+        Route receipt / bill photo analysis.
+        Primary: Gemini (gemini-3.8-flash).
+        Returns: (ReceiptExtractionResult, fallback_used).
+        """
+        chain: List[str] = ["gemini"]
+        errors = []
+
+        for idx, provider_name in enumerate(chain):
+            if not self.is_provider_usable(provider_name):
+                logger.info(f"Skipping provider '{provider_name}' for receipt (unavailable or circuit open).")
+                continue
+
+            provider = self.get_provider(provider_name)
+            if not provider or not provider.supports_vision():
+                continue
+
+            try:
+                logger.info(f"Dispatching receipt extraction to provider: {provider_name}")
+                result = provider.extract_receipt_from_image(
+                    image_path=image_path,
+                    caption=caption
+                )
+                self.health_repo.record_success(provider_name)
+                fallback_used = (idx > 0)
+                return result, fallback_used
+
+            except (AIRateLimitError, AIModelUnavailableError, AITimeoutError) as e:
+                logger.warning(f"Provider '{provider_name}' failed with transient error: {e}")
+                self.health_repo.record_failure(provider_name, str(e))
+                errors.append(f"{provider_name}: {e}")
+            except Exception as e:
+                logger.error(f"Provider '{provider_name}' failed with unexpected error: {e}", exc_info=True)
+                self.health_repo.record_failure(provider_name, str(e))
+                errors.append(f"{provider_name}: {e}")
+
+        raise AIServiceError(f"All vision providers failed for receipt photo: {'; '.join(errors)}")
+
+

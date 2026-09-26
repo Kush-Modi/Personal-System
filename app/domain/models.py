@@ -8,8 +8,11 @@ from typing import Any, Dict, Optional
 class ItemType(str, Enum):
     FOOD = "FOOD"
     EXPENSE = "EXPENSE"
+    WEIGHT = "WEIGHT"
     TASK = "TASK"
     REMINDER = "REMINDER"
+    GENERAL_CHAT = "GENERAL_CHAT"
+    DATA_QUERY = "DATA_QUERY"
     OTHER = "OTHER"
 
     @classmethod
@@ -70,10 +73,33 @@ class ExpensePayload:
 
 
 @dataclass
+class WeightPayload:
+    weight_kg: float
+    date: Optional[str] = None  # YYYY-MM-DD
+    unit_original: str = "kg"
+    confidence: float = 1.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class TaskPayload:
     title: str
     due_date: Optional[str] = None  # YYYY-MM-DD
     description: Optional[str] = None
+    confidence: float = 1.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ReminderPayload:
+    reminder_text: str
+    remind_at: Optional[str] = None  # ISO datetime or natural language
+    is_recurring: bool = False
+    recurrence_rule: Optional[str] = None
     confidence: float = 1.0
 
     def to_dict(self) -> Dict[str, Any]:

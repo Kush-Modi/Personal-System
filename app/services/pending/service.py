@@ -22,11 +22,15 @@ from app.domain.models import (
     PendingItem,
     PendingStatus,
     TaskPayload,
+    WeightPayload,
 )
 from app.domain.validators import validate_payload
 from app.services.finance.service import FinanceService
 from app.services.food.service import FoodService
 from app.services.food_memory.service import FoodMemoryService
+from app.services.reminder.service import ReminderService
+from app.services.task.service import TaskService
+from app.services.weight.service import WeightService
 
 logger = get_logger("services.pending")
 
@@ -39,14 +43,22 @@ class PendingItemService:
         pending_repo: Optional[PendingItemRepository] = None,
         food_service: Optional[FoodService] = None,
         finance_service: Optional[FinanceService] = None,
+        weight_service: Optional[WeightService] = None,
         food_memory_service: Optional[FoodMemoryService] = None,
+        task_service: Optional[TaskService] = None,
+        reminder_service: Optional[ReminderService] = None,
         ttl_hours: Optional[int] = None
     ):
         self.repo = pending_repo or PendingItemRepository()
         self.food_service = food_service or FoodService()
         self.finance_service = finance_service or FinanceService()
+        self.weight_service = weight_service or WeightService()
         self.food_memory_service = food_memory_service or FoodMemoryService()
+        self.task_service = task_service or TaskService()
+        self.reminder_service = reminder_service or ReminderService()
         self.ttl_hours = ttl_hours if ttl_hours is not None else settings.pending_item_ttl_hours
+
+
 
     def create_pending_item(
         self,
@@ -147,13 +159,40 @@ class PendingItemService:
                     description=desc
                 )
 
+            elif item.item_type == ItemType.WEIGHT.value or isinstance(validated_obj, WeightPayload):
+                weight_payload = validated_obj if isinstance(validated_obj, WeightPayload) else WeightPayload(**item.structured_payload)
+                domain_record = self.weight_service.record_weight(
+                    weight_kg=weight_payload.weight_kg,
+                    date=weight_payload.date
+                )
+
             elif item.item_type == ItemType.TASK.value:
-                # Task persistence placeholder
-                domain_record = {"status": "created", "title": item.structured_payload.get("title")}
+                task_title = item.structured_payload.get("title") or "Task"
+                task_due = item.structured_payload.get("due_date") or item.structured_payload.get("due_at")
+                task_prio = item.structured_payload.get("priority", "MEDIUM")
+                task_desc = item.structured_payload.get("description")
+                domain_record = self.task_service.create_task(
+                    title=task_title,
+                    description=task_desc,
+                    priority=task_prio,
+                    due_at=task_due,
+                    source=item.source
+                )
+
+            elif item.item_type == ItemType.REMINDER.value:
+                rem_text = item.structured_payload.get("reminder_text") or item.structured_payload.get("title") or "Reminder"
+                rem_at = item.structured_payload.get("remind_at") or (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+                recurrence = item.structured_payload.get("recurrence_rule") or item.structured_payload.get("recurrence")
+                domain_record = self.reminder_service.create_reminder(
+                    reminder_text=rem_text,
+                    remind_at=rem_at,
+                    recurrence=recurrence
+                )
 
             else:
                 logger.warning(f"Unrecognized domain item type '{item.item_type}' for item #{item_id}")
                 domain_record = {"status": "saved", "type": item.item_type}
+
 
             # Update status in database
             self.repo.update_status(item_id, PendingStatus.CONFIRMED.value)
