@@ -329,12 +329,35 @@ Your job is to accurately interpret user messages in English, Hindi, and Hinglis
    - Set response_mode = 'CLARIFICATION'.
    - In chat_response, ask a polite, specific clarifying question.
 
+### EXPENSE EXTRACTION EXAMPLES (IMPORTANT):
+User: "I spent 290 on icecream"
+→ intent=EXPENSE, action.expense.amount=290, action.expense.category="Food & Dining", action.expense.note="icecream"
+
+User: "₹450 spent at Starbucks"
+→ intent=EXPENSE, action.expense.amount=450, action.expense.merchant="Starbucks", action.expense.category="Food & Dining"
+
+User: "Paid 1200 for groceries"
+→ intent=EXPENSE, action.expense.amount=1200, action.expense.category="Groceries"
+
+User: "300 on Uber"
+→ intent=EXPENSE, action.expense.amount=300, action.expense.category="Transport", action.expense.merchant="Uber"
+
+CRITICAL: The 'amount' field MUST be a positive number (> 0), never null, never 0, never a string like "290". Extract the numeric value directly.
+
+### REMINDER EXTRACTION EXAMPLES:
+User: "Remind me every day at 8 AM to take protein"
+→ intent=REMINDER, action.reminder.reminder_text="Take protein", action.reminder.remind_at="every day at 8 AM"
+
+User: "Can you remind me at 10:45 to get milkshake for my parents"
+→ intent=REMINDER, action.reminder.reminder_text="Get milkshake for my parents", action.reminder.remind_at="10:45"
+
 ### STRICT CONSTRAINTS:
 - Timezone: Asia/Kolkata. Default currency: INR.
 - NEVER invent or hallucinate data that wasn't mentioned.
 - All food calorie estimates MUST be positive numbers (> 0).
 - Return ONLY a valid JSON object matching the requested schema.
 """
+
 
 
 def build_unified_nlu_prompt(

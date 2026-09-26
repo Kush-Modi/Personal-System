@@ -92,11 +92,54 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.debug(f"Context correction check passed through: {e}")
 
     # ==================================================
-    # 3. INPUT PROCESSOR ROUTING (AI / Natural Language / Mock)
+    # 3. REMINDER MANAGEMENT SHORTCUT (list / cancel)
+    # ==================================================
+    text_lower = text.lower()
+    _reminder_list_triggers = (
+        "my reminders", "show reminders", "list reminders", "reminders i have",
+        "what reminders", "upcoming reminders", "pending reminders", "active reminders"
+    )
+    _reminder_cancel_triggers = ("cancel reminder", "delete reminder", "remove reminder", "stop reminder")
+
+    if any(t in text_lower for t in _reminder_list_triggers):
+        try:
+            reminders = reminder_service.list_upcoming(user_id=user_id, limit=15)
+            if not reminders:
+                reply_text = "📭 You have no upcoming reminders."
+            else:
+                lines = ["🔔 *Your Upcoming Reminders:*\n"]
+                for r in reminders:
+                    rec_label = f" 🔁 {r.recurrence}" if r.recurrence else ""
+                    lines.append(f"• `#{r.id}` {r.reminder_text} — _{r.remind_at}{rec_label}_")
+                reply_text = "\n".join(lines)
+            conversation_service.record_turn(user_id, text, reply_text, intent="REMINDER")
+            await update.message.reply_text(reply_text, parse_mode="Markdown")
+            return
+        except Exception as e:
+            logger.error(f"Failed to list reminders: {e}", exc_info=True)
+
+    if any(t in text_lower for t in _reminder_cancel_triggers):
+        import re as _re
+        id_match = _re.search(r"#?(\d+)", text)
+        if id_match:
+            rid = int(id_match.group(1))
+            try:
+                reminder_service.cancel_reminder(rid)
+                reply_text = f"✅ Reminder #{rid} cancelled."
+                conversation_service.record_turn(user_id, text, reply_text, intent="REMINDER")
+                await update.message.reply_text(reply_text)
+                return
+            except Exception as e:
+                await update.message.reply_text(f"❌ Could not cancel reminder #{rid}: {e}")
+                return
+
+    # ==================================================
+    # 4. INPUT PROCESSOR ROUTING (AI / Natural Language / Mock)
     # ==================================================
     result = input_processor.process_text(text)
 
     if result.success:
+
         # A. DATA_QUERY Execution via Analytics Planner
         if result.item_type == ItemType.DATA_QUERY.value or result.response_mode == "QUERY":
             # Formulate query plan or execute

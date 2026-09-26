@@ -64,8 +64,8 @@ class GroqProvider(AIProvider):
         return bool(self.api_key and len(self.api_key.strip()) > 0)
 
     def supports_vision(self) -> bool:
-        """Groq vision is enabled only if configured in settings."""
-        return settings.groq_vision_fallback_enabled
+        """Groq supports vision when API key is available and vision fallback is enabled (default: True)."""
+        return self.is_available() and settings.groq_vision_fallback_enabled
 
     def _get_client(self):
         """Lazy initialization of Groq client."""

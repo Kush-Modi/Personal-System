@@ -73,13 +73,11 @@ class AIRouter:
     ) -> Tuple[FoodExtractionResult, bool]:
         """
         Route multimodal food photo analysis.
-        Primary: Gemini (gemini-2.5-flash).
-        Fallback: Groq vision (if enabled and healthy).
+        Chain: Gemini → Groq vision → OpenRouter vision.
         Returns: (FoodExtractionResult, fallback_used).
         """
-        chain: List[str] = ["gemini"]
-        if settings.groq_vision_fallback_enabled:
-            chain.append("groq")
+        # Always build full chain; each provider gates on supports_vision() + is_provider_usable()
+        chain: List[str] = ["gemini", "groq", "openrouter"]
 
         errors = []
         for idx, provider_name in enumerate(chain):
@@ -89,6 +87,7 @@ class AIRouter:
 
             provider = self.get_provider(provider_name)
             if not provider or not provider.supports_vision():
+                logger.debug(f"Provider '{provider_name}' does not support vision, skipping.")
                 continue
 
             try:
@@ -209,10 +208,10 @@ class AIRouter:
     ) -> Tuple[ReceiptExtractionResult, bool]:
         """
         Route receipt / bill photo analysis.
-        Primary: Gemini (gemini-3.8-flash).
+        Chain: Gemini → Groq vision → OpenRouter vision.
         Returns: (ReceiptExtractionResult, fallback_used).
         """
-        chain: List[str] = ["gemini"]
+        chain: List[str] = ["gemini", "groq", "openrouter"]
         errors = []
 
         for idx, provider_name in enumerate(chain):
@@ -222,6 +221,7 @@ class AIRouter:
 
             provider = self.get_provider(provider_name)
             if not provider or not provider.supports_vision():
+                logger.debug(f"Provider '{provider_name}' does not support vision, skipping receipt route.")
                 continue
 
             try:
@@ -244,5 +244,4 @@ class AIRouter:
                 errors.append(f"{provider_name}: {e}")
 
         raise AIServiceError(f"All vision providers failed for receipt photo: {'; '.join(errors)}")
-
 

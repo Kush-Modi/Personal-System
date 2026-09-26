@@ -37,6 +37,9 @@ class Settings:
     telegram_bot_token: str = field(
         default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", "")
     )
+    telegram_allowed_user_id: Optional[int] = field(
+        default_factory=lambda: int(os.getenv("TELEGRAM_ALLOWED_USER_ID", "0")) if os.getenv("TELEGRAM_ALLOWED_USER_ID") else None
+    )
 
     # Database
     database_path: Path = field(
@@ -108,14 +111,17 @@ class Settings:
         default_factory=lambda: os.getenv("GROQ_DEFAULT_MODEL", "openai/gpt-oss-20b")
     )
     groq_vision_model: str = field(
-        default_factory=lambda: os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
+        default_factory=lambda: os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
     )
     groq_vision_fallback_enabled: bool = field(
-        default_factory=lambda: os.getenv("GROQ_VISION_FALLBACK_ENABLED", "false").lower() in ("true", "1", "yes")
+        default_factory=lambda: os.getenv("GROQ_VISION_FALLBACK_ENABLED", "true").lower() in ("true", "1", "yes")
     )
 
     openrouter_default_model: str = field(
         default_factory=lambda: os.getenv("OPENROUTER_DEFAULT_MODEL", "openrouter/free")
+    )
+    openrouter_vision_model: str = field(
+        default_factory=lambda: os.getenv("OPENROUTER_VISION_MODEL", "meta-llama/llama-3.2-11b-vision-instruct:free")
     )
 
     # AI Budgets & Guardrails
@@ -185,6 +191,7 @@ class Settings:
             "groq_vision_model": self.groq_vision_model,
             "groq_vision_fallback_enabled": self.groq_vision_fallback_enabled,
             "openrouter_default_model": self.openrouter_default_model,
+            "openrouter_vision_model": self.openrouter_vision_model,
             "ai_daily_request_limit": self.ai_daily_request_limit,
             "ai_daily_token_limit": self.ai_daily_token_limit,
             "timezone": self.timezone,

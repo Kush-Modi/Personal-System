@@ -73,11 +73,37 @@ class AIInputProcessor(InputProcessor):
                     )
 
                 elif result.intent == ItemType.EXPENSE.value:
-                    amt_raw = action.get("amount", 0.0)
-                    try:
-                        amt = float(amt_raw)
-                    except (ValueError, TypeError):
-                        amt = 0.0
+                    # Robust amount extraction: try multiple keys, then regex on raw text
+                    import re as _re
+
+                    def _extract_amount(action_dict: dict, raw_input: str) -> float:
+                        """Try multiple keys; last resort: regex on raw user text."""
+                        for key in ("amount", "total", "price", "cost", "grand_total", "value"):
+                            raw = action_dict.get(key)
+                            if raw is not None:
+                                s = str(raw).strip()
+                                # Strip currency prefixes: ₹, Rs., INR, $
+                                s = _re.sub(r"(?i)^(₹|rs\.?|inr|\$)\s*", "", s)
+                                try:
+                                    v = float(s)
+                                    if v > 0:
+                                        return v
+                                except (ValueError, TypeError):
+                                    pass
+                        # Fallback: regex on raw text for patterns like "₹290", "Rs 290", "290 rupees"
+                        m = _re.search(
+                            r"(?:₹|rs\.?|inr)?\s*(\d+(?:[.,]\d+)?)",
+                            raw_input,
+                            _re.IGNORECASE
+                        )
+                        if m:
+                            try:
+                                return float(m.group(1).replace(",", ""))
+                            except ValueError:
+                                pass
+                        return 0.0
+
+                    amt = _extract_amount(action, cleaned)
 
                     date_val = action.get("date")
                     if date_val == "today":
@@ -100,6 +126,7 @@ class AIInputProcessor(InputProcessor):
                         response_mode=result.response_mode,
                         raw_text=cleaned,
                     )
+
 
                 elif result.intent == ItemType.WEIGHT.value:
                     w_raw = action.get("weight_kg") or action.get("weight", 0.0)
