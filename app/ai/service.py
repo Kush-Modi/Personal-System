@@ -79,15 +79,20 @@ class AIService:
                 memory_context=mem_context
             )
 
-            # 4. Log successful telemetry
+            # 4. Log successful telemetry with authoritative tokens and latency from provider
+            p_tokens = result.prompt_tokens or 1200
+            c_tokens = result.completion_tokens or 250
+            t_tokens = result.total_tokens or (p_tokens + c_tokens)
+
             self.ai_request_repo.log_request(
                 request_id=req_id,
                 task_type=task_type,
                 provider=result.provider,
                 model=result.model,
-                prompt_tokens=1200,  # Estimated or from response
-                completion_tokens=250,
-                total_tokens=1450,
+                prompt_tokens=p_tokens,
+                completion_tokens=c_tokens,
+                total_tokens=t_tokens,
+                latency_ms=result.latency_ms,
                 status="SUCCESS",
                 fallback_used=fallback_used
             )
@@ -160,14 +165,20 @@ class AIService:
                 result.is_reconciled = True
                 result.mismatch_warning = None
 
+            # Log telemetry with real token counts
+            p_tokens = result.prompt_tokens or 1200
+            c_tokens = result.completion_tokens or 250
+            t_tokens = result.total_tokens or (p_tokens + c_tokens)
+
             self.ai_request_repo.log_request(
                 request_id=req_id,
                 task_type=task_type,
                 provider=result.provider,
                 model=result.model,
-                prompt_tokens=1200,
-                completion_tokens=250,
-                total_tokens=1450,
+                prompt_tokens=p_tokens,
+                completion_tokens=c_tokens,
+                total_tokens=t_tokens,
+                latency_ms=result.latency_ms,
                 status="SUCCESS",
                 fallback_used=fallback_used
             )
@@ -228,15 +239,20 @@ class AIService:
                 memory_context=mem_context
             )
 
-            # 4. Log telemetry
+            # 4. Log telemetry with real token counts
+            p_tokens = result.prompt_tokens or 400
+            c_tokens = result.completion_tokens or 150
+            t_tokens = result.total_tokens or (p_tokens + c_tokens)
+
             self.ai_request_repo.log_request(
                 request_id=req_id,
                 task_type=task_type,
                 provider=result.provider,
                 model=result.model,
-                prompt_tokens=400,
-                completion_tokens=150,
-                total_tokens=550,
+                prompt_tokens=p_tokens,
+                completion_tokens=c_tokens,
+                total_tokens=t_tokens,
+                latency_ms=result.latency_ms,
                 status="SUCCESS",
                 fallback_used=fallback_used
             )
@@ -294,15 +310,20 @@ class AIService:
             elif result.intent == "DATA_QUERY":
                 specific_task_type = AITaskType.DATA_QUERY.value
 
-            # 3. Log telemetry
+            # 3. Log telemetry with real token metrics
+            p_tokens = result.prompt_tokens or 450
+            c_tokens = result.completion_tokens or 180
+            t_tokens = result.total_tokens or (p_tokens + c_tokens)
+
             self.ai_request_repo.log_request(
                 request_id=req_id,
                 task_type=specific_task_type,
                 provider=result.provider,
                 model=result.model,
-                prompt_tokens=450,
-                completion_tokens=180,
-                total_tokens=630,
+                prompt_tokens=p_tokens,
+                completion_tokens=c_tokens,
+                total_tokens=t_tokens,
+                latency_ms=result.latency_ms,
                 status="SUCCESS",
                 fallback_used=fallback_used
             )

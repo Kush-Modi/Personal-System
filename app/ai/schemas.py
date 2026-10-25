@@ -41,6 +41,10 @@ class IntentResult:
     provider: str = ""
     model: str = ""
     raw_response: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: float = 0.0
 
 
 def parse_intent_result(data: Dict[str, Any], default_confidence: float = 0.9) -> IntentResult:
@@ -249,6 +253,10 @@ class FoodExtractionResult:
     total_estimated_calories: float = 0.0
     provider: str = ""
     model: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: float = 0.0
 
     def __post_init__(self):
         if self.items and self.total_estimated_calories == 0.0:
@@ -290,6 +298,10 @@ class ReceiptExtractionResult:
     raw_response: str = ""
     provider: str = ""
     model: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: float = 0.0
 
     def __post_init__(self):
         if self.total_amount is not None and self.grand_total == 0.0:

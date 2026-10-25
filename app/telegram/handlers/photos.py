@@ -1,5 +1,7 @@
 """Telegram photo message handlers for image ingestion and confirmation staging."""
 
+import asyncio
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -35,11 +37,15 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         telegram_file = await context.bot.get_file(photo.file_id)
         photo_bytes = await telegram_file.download_as_bytearray()
 
-        # Optimize and save locally
-        saved_path = media_storage.save_image(bytes(photo_bytes), prefix="inbound", optimize=True)
+        # Optimize and save locally (CPU-bound image compression offloaded to thread)
+        saved_path = await asyncio.to_thread(
+            media_storage.save_image, bytes(photo_bytes), prefix="inbound", optimize=True
+        )
 
-        # Process photo with AI / Multimodal perception
-        result = input_processor.process_photo(image_path=saved_path, caption=caption)
+        # Process photo with AI / Multimodal perception in worker thread
+        result = await asyncio.to_thread(
+            input_processor.process_photo, image_path=saved_path, caption=caption
+        )
 
         if result.success:
             pending_item = pending_service.create_pending_item(

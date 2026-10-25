@@ -1,5 +1,7 @@
 """Telegram plain text message handlers with edit session management and input routing."""
 
+import asyncio
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -136,7 +138,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # ==================================================
     # 4. INPUT PROCESSOR ROUTING (AI / Natural Language / Mock)
     # ==================================================
-    result = input_processor.process_text(text)
+    # Offload blocking network AI inference to worker thread to prevent event-loop freezing
+    result = await asyncio.to_thread(input_processor.process_text, text)
 
     if result.success:
 

@@ -195,6 +195,10 @@ class OpenRouterProvider(AIProvider):
         intent_res.provider = self.name
         intent_res.model = res.model
         intent_res.raw_response = res.content
+        intent_res.prompt_tokens = res.prompt_tokens
+        intent_res.completion_tokens = res.completion_tokens
+        intent_res.total_tokens = res.total_tokens
+        intent_res.latency_ms = res.latency_ms
         return intent_res
 
     def extract_food_from_image(
@@ -269,6 +273,11 @@ class OpenRouterProvider(AIProvider):
                 )
                 for item in items_raw
             ]
+            prompt_tokens = usage.get("prompt_tokens", 0) or 0
+            completion_tokens = usage.get("completion_tokens", 0) or 0
+            total_tokens = usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens)
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
             return FoodExtractionResult(
                 items=extracted_items,
                 raw_response=text_output,
@@ -276,6 +285,10 @@ class OpenRouterProvider(AIProvider):
                 meal_type=data.get("meal_type"),
                 provider=self.name,
                 model=self.vision_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                latency_ms=latency_ms,
             )
 
         except (AIAuthenticationError, AIRateLimitError, AIModelUnavailableError):
@@ -330,6 +343,10 @@ class OpenRouterProvider(AIProvider):
             meal_type=data.get("meal_type"),
             provider=self.name,
             model=res.model,
+            prompt_tokens=res.prompt_tokens,
+            completion_tokens=res.completion_tokens,
+            total_tokens=res.total_tokens,
+            latency_ms=res.latency_ms,
         )
 
     def extract_receipt_from_image(
@@ -370,9 +387,12 @@ class OpenRouterProvider(AIProvider):
         }
 
         logger.info(f"Dispatching receipt to OpenRouter vision model '{self.vision_model}'...")
+        start_time = time.perf_counter()
         try:
             with httpx.Client(timeout=float(settings.ai_timeout_seconds)) as client:
                 response = client.post(self.API_URL, json=payload, headers=headers)
+
+            latency_ms = (time.perf_counter() - start_time) * 1000
 
             if response.status_code >= 400:
                 raise AIModelUnavailableError(f"OpenRouter receipt vision failed (HTTP {response.status_code})")
@@ -384,6 +404,11 @@ class OpenRouterProvider(AIProvider):
 
             text_output = choices[0].get("message", {}).get("content", "") or ""
             data = json.loads(text_output) if text_output else {}
+
+            usage = resp_data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0) or 0
+            completion_tokens = usage.get("completion_tokens", 0) or 0
+            total_tokens = usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens)
 
             items_raw = data.get("items", [])
             receipt_items = [
@@ -411,6 +436,10 @@ class OpenRouterProvider(AIProvider):
                 raw_response=text_output,
                 provider=self.name,
                 model=self.vision_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                latency_ms=latency_ms,
             )
 
         except (AIAuthenticationError, AIRateLimitError, AIModelUnavailableError):

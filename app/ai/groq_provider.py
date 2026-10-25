@@ -207,6 +207,10 @@ class GroqProvider(AIProvider):
         intent_res.provider = self.name
         intent_res.model = res.model
         intent_res.raw_response = res.content
+        intent_res.prompt_tokens = res.prompt_tokens
+        intent_res.completion_tokens = res.completion_tokens
+        intent_res.total_tokens = res.total_tokens
+        intent_res.latency_ms = res.latency_ms
         return intent_res
 
     def extract_food_from_image(
@@ -254,6 +258,10 @@ class GroqProvider(AIProvider):
             meal_type=data.get("meal_type"),
             provider=self.name,
             model=res.model,
+            prompt_tokens=res.prompt_tokens,
+            completion_tokens=res.completion_tokens,
+            total_tokens=res.total_tokens,
+            latency_ms=res.latency_ms,
         )
 
     def extract_food_from_text(
@@ -297,6 +305,10 @@ class GroqProvider(AIProvider):
             meal_type=data.get("meal_type"),
             provider=self.name,
             model=res.model,
+            prompt_tokens=res.prompt_tokens,
+            completion_tokens=res.completion_tokens,
+            total_tokens=res.total_tokens,
+            latency_ms=res.latency_ms,
         )
 
     def extract_receipt_from_image(
